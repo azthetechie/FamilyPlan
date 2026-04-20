@@ -1,15 +1,15 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Depends
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
 import uuid
-from datetime import datetime, timezone
-
+import httpx
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime, timezone, timedelta
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -19,54 +19,457 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+# ============== MODELS ==============
+class User(BaseModel):
+    user_id: str
+    family_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    role: str = "parent"  # parent | child
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
 
-# Add your routes to the router instead of directly to app
+class Child(BaseModel):
+    child_id: str = Field(default_factory=lambda: f"child_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    name: str
+    age: Optional[int] = None
+    color: Optional[str] = "#FFD6BA"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ChildCreate(BaseModel):
+    name: str
+    age: Optional[int] = None
+    color: Optional[str] = "#FFD6BA"
+
+
+class EventCreate(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    date: str  # ISO date YYYY-MM-DD
+    time: Optional[str] = ""
+    category: Optional[str] = "general"  # general | school | sport | family | work | weekend
+    assigned_to: Optional[List[str]] = []  # user_ids or child_ids
+    color: Optional[str] = "#90DBF4"
+
+
+class Event(EventCreate):
+    event_id: str = Field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    created_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ShoppingItemCreate(BaseModel):
+    name: str
+    quantity: Optional[str] = "1"
+    supermarket: Optional[str] = "Any"  # Coles | Woolworths | Aldi | IGA | Foodworks | Any
+    barcode: Optional[str] = ""
+    brand: Optional[str] = ""
+    category: Optional[str] = "general"
+    notes: Optional[str] = ""
+
+
+class ShoppingItem(ShoppingItemCreate):
+    item_id: str = Field(default_factory=lambda: f"item_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    checked: bool = False
+    added_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class NoteCreate(BaseModel):
+    title: Optional[str] = ""
+    content: str
+    color: Optional[str] = "#FBF8CC"
+
+
+class Note(NoteCreate):
+    note_id: str = Field(default_factory=lambda: f"note_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    created_by: str
+    created_by_name: Optional[str] = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ============== AUTH HELPERS ==============
+async def get_current_user(
+    request: Request,
+) -> User:
+    token = request.cookies.get("session_token")
+    if not token:
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not sess:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    expires_at = sess.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    user_doc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="User not found")
+    if isinstance(user_doc.get("created_at"), str):
+        user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
+    return User(**user_doc)
+
+
+# ============== AUTH ROUTES ==============
+@api_router.post("/auth/session")
+async def create_session(request: Request, response: Response):
+    """Exchange session_id from Emergent OAuth for a session_token."""
+    body = await request.json()
+    session_id = body.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+
+    async with httpx.AsyncClient() as http_client:
+        resp = await http_client.get(
+            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+            headers={"X-Session-ID": session_id},
+            timeout=15.0,
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid session_id")
+
+    data = resp.json()
+    email = data.get("email")
+    name = data.get("name")
+    picture = data.get("picture")
+    session_token = data.get("session_token")
+
+    if not email or not session_token:
+        raise HTTPException(status_code=400, detail="Incomplete auth data")
+
+    # Find or create user
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        family_id = existing["family_id"]
+        # Update name/picture
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture}},
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        family_id = f"family_{uuid.uuid4().hex[:12]}"
+        user_doc = {
+            "user_id": user_id,
+            "family_id": family_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "role": "parent",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.users.insert_one(user_doc)
+
+    # Store session
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one({
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": expires_at,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    # Set httpOnly cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=7 * 24 * 60 * 60,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        path="/",
+    )
+
+    return {
+        "user_id": user_id,
+        "family_id": family_id,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "role": "parent",
+    }
+
+
+@api_router.get("/auth/me")
+async def auth_me(request: Request):
+    user = await get_current_user(request)
+    return user.model_dump()
+
+
+@api_router.post("/auth/logout")
+async def auth_logout(response: Response, session_token: Optional[str] = Cookie(None)):
+    if session_token:
+        await db.user_sessions.delete_one({"session_token": session_token})
+    response.delete_cookie("session_token", path="/")
+    return {"ok": True}
+
+
+# ============== FAMILY / CHILDREN ==============
+@api_router.get("/family/members")
+async def get_family_members(request: Request):
+    user = await get_current_user(request)
+    parents = await db.users.find({"family_id": user.family_id}, {"_id": 0}).to_list(100)
+    children = await db.children.find({"family_id": user.family_id}, {"_id": 0}).to_list(100)
+    for p in parents:
+        if isinstance(p.get("created_at"), str):
+            pass
+    return {"parents": parents, "children": children}
+
+
+@api_router.post("/family/children")
+async def add_child(payload: ChildCreate, request: Request):
+    user = await get_current_user(request)
+    child = Child(family_id=user.family_id, **payload.model_dump())
+    doc = child.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.children.insert_one(doc)
+    return child.model_dump()
+
+
+@api_router.delete("/family/children/{child_id}")
+async def delete_child(child_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.children.delete_one({"child_id": child_id, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Child not found")
+    return {"ok": True}
+
+
+# ============== CALENDAR EVENTS ==============
+@api_router.get("/events")
+async def list_events(request: Request):
+    user = await get_current_user(request)
+    events = await db.events.find({"family_id": user.family_id}, {"_id": 0}).sort("date", 1).to_list(1000)
+    return events
+
+
+@api_router.post("/events")
+async def create_event(payload: EventCreate, request: Request):
+    user = await get_current_user(request)
+    event = Event(family_id=user.family_id, created_by=user.user_id, **payload.model_dump())
+    doc = event.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.events.insert_one(doc)
+    return event.model_dump()
+
+
+@api_router.put("/events/{event_id}")
+async def update_event(event_id: str, payload: EventCreate, request: Request):
+    user = await get_current_user(request)
+    result = await db.events.update_one(
+        {"event_id": event_id, "family_id": user.family_id},
+        {"$set": payload.model_dump()},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    updated = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.events.delete_one({"event_id": event_id, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"ok": True}
+
+
+# ============== SHOPPING LIST ==============
+@api_router.get("/shopping")
+async def list_shopping(request: Request):
+    user = await get_current_user(request)
+    items = await db.shopping_items.find({"family_id": user.family_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+@api_router.post("/shopping")
+async def add_shopping(payload: ShoppingItemCreate, request: Request):
+    user = await get_current_user(request)
+    item = ShoppingItem(family_id=user.family_id, added_by=user.user_id, **payload.model_dump())
+    doc = item.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.shopping_items.insert_one(doc)
+
+    # Track frequency for common items
+    name_lower = payload.name.strip().lower()
+    if name_lower:
+        await db.frequent_items.update_one(
+            {"family_id": user.family_id, "name_lower": name_lower},
+            {
+                "$set": {
+                    "name": payload.name.strip(),
+                    "family_id": user.family_id,
+                    "name_lower": name_lower,
+                    "last_used": datetime.now(timezone.utc).isoformat(),
+                    "supermarket": payload.supermarket,
+                    "category": payload.category,
+                },
+                "$inc": {"count": 1},
+            },
+            upsert=True,
+        )
+    return item.model_dump()
+
+
+@api_router.patch("/shopping/{item_id}")
+async def toggle_shopping(item_id: str, request: Request):
+    user = await get_current_user(request)
+    item = await db.shopping_items.find_one({"item_id": item_id, "family_id": user.family_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    new_val = not item.get("checked", False)
+    await db.shopping_items.update_one({"item_id": item_id}, {"$set": {"checked": new_val}})
+    item["checked"] = new_val
+    return item
+
+
+@api_router.put("/shopping/{item_id}")
+async def update_shopping(item_id: str, payload: ShoppingItemCreate, request: Request):
+    user = await get_current_user(request)
+    result = await db.shopping_items.update_one(
+        {"item_id": item_id, "family_id": user.family_id},
+        {"$set": payload.model_dump()},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    updated = await db.shopping_items.find_one({"item_id": item_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/shopping/{item_id}")
+async def delete_shopping(item_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.shopping_items.delete_one({"item_id": item_id, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"ok": True}
+
+
+@api_router.delete("/shopping")
+async def clear_checked(request: Request):
+    user = await get_current_user(request)
+    result = await db.shopping_items.delete_many({"family_id": user.family_id, "checked": True})
+    return {"deleted": result.deleted_count}
+
+
+@api_router.get("/shopping/frequent")
+async def frequent_items(request: Request):
+    """Returns frequently used items for suggestion/autocomplete."""
+    user = await get_current_user(request)
+    items = await db.frequent_items.find(
+        {"family_id": user.family_id}, {"_id": 0}
+    ).sort("count", -1).limit(50).to_list(50)
+    return items
+
+
+@api_router.get("/shopping/barcode/{barcode}")
+async def lookup_barcode(barcode: str, request: Request):
+    """Lookup product info via Open Food Facts (free, no key)."""
+    await get_current_user(request)
+    if not barcode.strip():
+        raise HTTPException(status_code=400, detail="barcode required")
+    try:
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(
+                f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json",
+                timeout=10.0,
+            )
+        if resp.status_code != 200:
+            return {"found": False, "barcode": barcode}
+        data = resp.json()
+        if data.get("status") != 1:
+            return {"found": False, "barcode": barcode}
+        product = data.get("product", {})
+        return {
+            "found": True,
+            "barcode": barcode,
+            "name": product.get("product_name") or product.get("generic_name") or "Unknown product",
+            "brand": product.get("brands", ""),
+            "category": (product.get("categories", "").split(",")[0] or "general").strip(),
+            "image": product.get("image_front_small_url") or product.get("image_url", ""),
+        }
+    except Exception as e:
+        logging.error(f"Barcode lookup error: {e}")
+        return {"found": False, "barcode": barcode, "error": str(e)}
+
+
+# ============== NOTES ==============
+@api_router.get("/notes")
+async def list_notes(request: Request):
+    user = await get_current_user(request)
+    notes = await db.notes.find({"family_id": user.family_id}, {"_id": 0}).sort("updated_at", -1).to_list(1000)
+    return notes
+
+
+@api_router.post("/notes")
+async def create_note(payload: NoteCreate, request: Request):
+    user = await get_current_user(request)
+    note = Note(
+        family_id=user.family_id,
+        created_by=user.user_id,
+        created_by_name=user.name,
+        **payload.model_dump(),
+    )
+    doc = note.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    doc["updated_at"] = doc["updated_at"].isoformat()
+    await db.notes.insert_one(doc)
+    return note.model_dump()
+
+
+@api_router.put("/notes/{note_id}")
+async def update_note(note_id: str, payload: NoteCreate, request: Request):
+    user = await get_current_user(request)
+    update_doc = payload.model_dump()
+    update_doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await db.notes.update_one(
+        {"note_id": note_id, "family_id": user.family_id},
+        {"$set": update_doc},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Note not found")
+    updated = await db.notes.find_one({"note_id": note_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/notes/{note_id}")
+async def delete_note(note_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.notes.delete_one({"note_id": note_id, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"ok": True}
+
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Family Organizer API", "version": "1.0"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
-
-# Include the router in the main app
+# ============== APP SETUP ==============
 app.include_router(api_router)
 
 app.add_middleware(
@@ -77,12 +480,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
