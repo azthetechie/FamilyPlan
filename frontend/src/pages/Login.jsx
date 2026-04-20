@@ -1,11 +1,25 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Calendar as CalendarIcon, ShoppingBag, StickyNote, Users } from 'lucide-react';
+import { family } from '../lib/api';
+import { Calendar as CalendarIcon, ShoppingBag, StickyNote, Users, UserPlus } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const [inviteInfo, setInviteInfo] = useState(null);
+
+  useEffect(() => {
+    // Detect ?invite=TOKEN and store for post-OAuth consumption
+    const qp = new URLSearchParams(window.location.search);
+    const inviteToken = qp.get('invite');
+    if (inviteToken) {
+      sessionStorage.setItem('pending_invite', inviteToken);
+      family.previewInvite(inviteToken).then(setInviteInfo).catch(() => {
+        sessionStorage.removeItem('pending_invite');
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && user) navigate('/dashboard', { replace: true });
@@ -26,6 +40,21 @@ export default function Login() {
             <span className="w-2 h-2 rounded-full bg-gray-900 pulse-ring" />
             Family Organiser
           </div>
+          {inviteInfo && (
+            <div
+              data-testid="invite-banner"
+              className="flex items-start gap-3 p-4 bg-[#FFD6BA] border-2 border-gray-900 rounded-lg shadow-[4px_4px_0px_0px_rgba(31,41,55,1)]"
+            >
+              <UserPlus size={22} strokeWidth={2.5} className="mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <div className="font-outfit font-bold">You've been invited!</div>
+                <div>
+                  <span className="font-semibold">{inviteInfo.created_by_name || 'Your partner'}</span>
+                  {' '}wants you to join their family. Sign in with Google below to accept.
+                </div>
+              </div>
+            </div>
+          )}
           <h1 className="font-outfit text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tighter leading-[0.95] text-gray-900">
             Your family,<br />
             <span className="bg-[#FBF8CC] px-3 py-1 inline-block border-2 border-gray-900 rounded-lg -rotate-1">

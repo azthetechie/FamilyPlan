@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { events, shopping, notes, family } from '../lib/api';
@@ -8,7 +8,9 @@ import ShoppingCard from '../components/ShoppingCard';
 import NotesCard from '../components/NotesCard';
 import FamilyCard from '../components/FamilyCard';
 import WeekendCard from '../components/WeekendCard';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
+import { nextOccurrenceDateTime } from '../lib/events';
+import { Bell } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
@@ -19,6 +21,7 @@ export default function Dashboard() {
   const [frequent, setFrequent] = useState([]);
   const [noteList, setNoteList] = useState([]);
   const [members, setMembers] = useState({ parents: [], children: [] });
+  const firedRemindersRef = useRef(new Set());
 
   const refresh = useCallback(async () => {
     try {

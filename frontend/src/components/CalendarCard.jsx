@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Calendar as CalendarIcon, Plus, Trash2, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { events as eventsApi } from '../lib/api';
 import { toast } from 'sonner';
+import { expandEvents, dateKey as toDateKey } from '../lib/events';
 
 const CATEGORIES = [
   { value: 'general', label: 'General', color: '#90DBF4' },
@@ -11,6 +12,20 @@ const CATEGORIES = [
   { value: 'sport', label: 'Sport', color: '#B9FBC0' },
   { value: 'family', label: 'Family', color: '#E0C3FC' },
   { value: 'work', label: 'Work', color: '#FBF8CC' },
+];
+
+const RECURRING_OPTIONS = [
+  { value: 'none', label: "Doesn't repeat" },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
+
+const REMINDER_OPTIONS = [
+  { value: 0, label: 'No reminder' },
+  { value: 15, label: '15 min before' },
+  { value: 60, label: '1 hour before' },
+  { value: 1440, label: '1 day before' },
 ];
 
 function getMonthGrid(year, month) {
@@ -45,6 +60,9 @@ export default function CalendarCard({ events, members, onChange }) {
     time: '',
     category: 'general',
     assigned_to: [],
+    recurring: 'none',
+    recur_until: '',
+    reminder_minutes: 0,
   });
 
   const grid = useMemo(
@@ -52,14 +70,21 @@ export default function CalendarCard({ events, members, onChange }) {
     [viewDate]
   );
 
+  // Expand recurring events over the current visible month range for display
+  const expanded = useMemo(() => {
+    const first = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    const last = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
+    return expandEvents(events, first, last);
+  }, [events, viewDate]);
+
   const eventsByDate = useMemo(() => {
     const map = {};
-    for (const e of events) {
+    for (const e of expanded) {
       map[e.date] = map[e.date] || [];
       map[e.date].push(e);
     }
     return map;
-  }, [events]);
+  }, [expanded]);
 
   const selectedEvents = eventsByDate[selected] || [];
 
@@ -73,6 +98,9 @@ export default function CalendarCard({ events, members, onChange }) {
       time: '',
       category: 'general',
       assigned_to: [],
+      recurring: 'none',
+      recur_until: '',
+      reminder_minutes: 0,
     });
     setOpen(true);
   };
@@ -209,6 +237,56 @@ export default function CalendarCard({ events, members, onChange }) {
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   className="w-full px-3 py-2.5 neo-input min-h-[72px]"
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-widest font-bold text-gray-500 mb-1 flex items-center gap-1">
+                      <Repeat size={12} strokeWidth={3} /> Repeat
+                    </label>
+                    <Select
+                      value={form.recurring}
+                      onValueChange={(v) => setForm({ ...form, recurring: v })}
+                    >
+                      <SelectTrigger data-testid="event-recurring-select" className="neo-input border-2 border-gray-300 focus:border-gray-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RECURRING_OPTIONS.map((r) => (
+                          <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-widest font-bold text-gray-500 mb-1 flex items-center gap-1">
+                      <Bell size={12} strokeWidth={3} /> Reminder
+                    </label>
+                    <Select
+                      value={String(form.reminder_minutes)}
+                      onValueChange={(v) => setForm({ ...form, reminder_minutes: parseInt(v, 10) })}
+                    >
+                      <SelectTrigger data-testid="event-reminder-select" className="neo-input border-2 border-gray-300 focus:border-gray-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REMINDER_OPTIONS.map((r) => (
+                          <SelectItem key={r.value} value={String(r.value)}>{r.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {form.recurring !== 'none' && (
+                  <div>
+                    <label className="text-xs uppercase tracking-widest font-bold text-gray-500 mb-1 block">Repeat until (optional)</label>
+                    <input
+                      data-testid="event-recur-until-input"
+                      type="date"
+                      value={form.recur_until}
+                      onChange={(e) => setForm({ ...form, recur_until: e.target.value })}
+                      className="w-full px-3 py-2.5 neo-input"
+                    />
+                  </div>
+                )}
                 {(members.parents.length > 0 || members.children.length > 0) && (
                   <div>
                     <div className="text-xs uppercase tracking-widest font-bold text-gray-500 mb-2">Assign to</div>
@@ -314,14 +392,27 @@ export default function CalendarCard({ events, members, onChange }) {
           ) : (
             selectedEvents.map((e) => (
               <div
-                key={e.event_id}
+                key={e.occurrence_key || e.event_id}
                 data-testid={`event-${e.event_id}`}
                 className="flex items-start gap-3 p-3 border-2 border-gray-900 rounded-lg group"
                 style={{ backgroundColor: (e.color || '#90DBF4') + '50' }}
               >
                 <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: e.color || '#90DBF4' }} />
                 <div className="flex-1 min-w-0">
-                  <div className="font-bold font-outfit">{e.title}</div>
+                  <div className="font-bold font-outfit flex items-center gap-2 flex-wrap">
+                    {e.title}
+                    {e.recurring && e.recurring !== 'none' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-gray-700 bg-white border border-gray-900 px-1.5 py-0.5 rounded">
+                        <Repeat size={10} strokeWidth={3} />
+                        {e.recurring}
+                      </span>
+                    )}
+                    {e.reminder_minutes > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-gray-700 bg-white border border-gray-900 px-1.5 py-0.5 rounded">
+                        <Bell size={10} strokeWidth={3} />
+                      </span>
+                    )}
+                  </div>
                   {e.time && <div className="text-xs text-gray-700">{e.time}</div>}
                   {e.description && <div className="text-xs text-gray-700 mt-0.5">{e.description}</div>}
                   {e.assigned_to?.length > 0 && (
@@ -334,6 +425,7 @@ export default function CalendarCard({ events, members, onChange }) {
                   data-testid={`event-delete-${e.event_id}`}
                   onClick={() => del(e.event_id)}
                   className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-red-600"
+                  title={e.is_occurrence ? 'Delete entire series' : 'Delete event'}
                 >
                   <Trash2 size={16} strokeWidth={2.5} />
                 </button>

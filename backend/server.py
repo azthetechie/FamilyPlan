@@ -99,6 +99,39 @@ class Note(NoteCreate):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TemplateItemInput(BaseModel):
+    name: str
+    supermarket: Optional[str] = "Any"
+    quantity: Optional[str] = "1"
+    category: Optional[str] = "general"
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    items: List[TemplateItemInput] = []
+
+
+class Template(TemplateCreate):
+    template_id: str = Field(default_factory=lambda: f"tpl_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    created_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class Invite(BaseModel):
+    invite_token: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    family_id: str
+    created_by: str
+    created_by_name: Optional[str] = ""
+    email: Optional[str] = ""  # optional target email hint
+    expires_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class InviteCreate(BaseModel):
+    email: Optional[str] = ""
+
+
 # ============== AUTH HELPERS ==============
 async def get_current_user(
     request: Request,
@@ -154,6 +187,7 @@ async def create_session(request: Request, response: Response):
     name = data.get("name")
     picture = data.get("picture")
     session_token = data.get("session_token")
+    invite_token = body.get("invite_token")
 
     if not email or not session_token:
         raise HTTPException(status_code=400, detail="Incomplete auth data")
@@ -170,7 +204,22 @@ async def create_session(request: Request, response: Response):
         )
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        family_id = f"family_{uuid.uuid4().hex[:12]}"
+        # Check if there's a valid invite to join an existing family
+        family_id = None
+        if invite_token:
+            invite_doc = await db.invites.find_one({"invite_token": invite_token}, {"_id": 0})
+            if invite_doc:
+                exp = invite_doc.get("expires_at")
+                if isinstance(exp, str):
+                    exp = datetime.fromisoformat(exp)
+                if exp and exp.tzinfo is None:
+                    exp = exp.replace(tzinfo=timezone.utc)
+                if exp and exp > datetime.now(timezone.utc):
+                    family_id = invite_doc["family_id"]
+                    # Consume the invite
+                    await db.invites.delete_one({"invite_token": invite_token})
+        if not family_id:
+            family_id = f"family_{uuid.uuid4().hex[:12]}"
         user_doc = {
             "user_id": user_id,
             "family_id": family_id,
@@ -466,7 +515,175 @@ async def delete_note(note_id: str, request: Request):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Family Organizer API", "version": "1.0"}
+    return {"message": "Family Organizer API", "version": "1.1"}
+
+
+# ============== PARENT INVITES ==============
+@api_router.post("/family/invites")
+async def create_invite(payload: InviteCreate, request: Request):
+    user = await get_current_user(request)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    invite = Invite(
+        family_id=user.family_id,
+        created_by=user.user_id,
+        created_by_name=user.name,
+        email=payload.email or "",
+        expires_at=expires_at,
+    )
+    doc = invite.model_dump()
+    doc["expires_at"] = doc["expires_at"].isoformat()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.invites.insert_one(doc)
+    return {
+        "invite_token": invite.invite_token,
+        "expires_at": expires_at.isoformat(),
+        "email": invite.email,
+        "created_by_name": invite.created_by_name,
+    }
+
+
+@api_router.get("/family/invites")
+async def list_invites(request: Request):
+    user = await get_current_user(request)
+    items = await db.invites.find({"family_id": user.family_id}, {"_id": 0}).to_list(50)
+    # Filter expired
+    now = datetime.now(timezone.utc)
+    live = []
+    for it in items:
+        exp = it.get("expires_at")
+        if isinstance(exp, str):
+            exp_dt = datetime.fromisoformat(exp)
+        else:
+            exp_dt = exp
+        if exp_dt and exp_dt.tzinfo is None:
+            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        if exp_dt and exp_dt > now:
+            live.append(it)
+    return live
+
+
+@api_router.delete("/family/invites/{invite_token}")
+async def revoke_invite(invite_token: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.invites.delete_one({"invite_token": invite_token, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    return {"ok": True}
+
+
+@api_router.get("/family/invites/preview/{invite_token}")
+async def preview_invite(invite_token: str):
+    """Public endpoint: preview an invite (shown on accept page)."""
+    invite_doc = await db.invites.find_one({"invite_token": invite_token}, {"_id": 0})
+    if not invite_doc:
+        raise HTTPException(status_code=404, detail="Invite not found or expired")
+    exp = invite_doc.get("expires_at")
+    if isinstance(exp, str):
+        exp = datetime.fromisoformat(exp)
+    if exp and exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp and exp < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Invite expired")
+    return {
+        "invite_token": invite_doc["invite_token"],
+        "created_by_name": invite_doc.get("created_by_name", ""),
+        "email": invite_doc.get("email", ""),
+    }
+
+
+# ============== SHOPPING TEMPLATES ==============
+@api_router.get("/shopping/templates")
+async def list_templates(request: Request):
+    user = await get_current_user(request)
+    templates = await db.shopping_templates.find(
+        {"family_id": user.family_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return templates
+
+
+@api_router.post("/shopping/templates")
+async def create_template(payload: TemplateCreate, request: Request):
+    user = await get_current_user(request)
+    tpl = Template(
+        family_id=user.family_id,
+        created_by=user.user_id,
+        **payload.model_dump(),
+    )
+    doc = tpl.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.shopping_templates.insert_one(doc)
+    return tpl.model_dump()
+
+
+@api_router.put("/shopping/templates/{template_id}")
+async def update_template(template_id: str, payload: TemplateCreate, request: Request):
+    user = await get_current_user(request)
+    result = await db.shopping_templates.update_one(
+        {"template_id": template_id, "family_id": user.family_id},
+        {"$set": payload.model_dump()},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    updated = await db.shopping_templates.find_one({"template_id": template_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/shopping/templates/{template_id}")
+async def delete_template(template_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.shopping_templates.delete_one(
+        {"template_id": template_id, "family_id": user.family_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"ok": True}
+
+
+@api_router.post("/shopping/templates/{template_id}/apply")
+async def apply_template(template_id: str, request: Request):
+    user = await get_current_user(request)
+    tpl = await db.shopping_templates.find_one(
+        {"template_id": template_id, "family_id": user.family_id}, {"_id": 0}
+    )
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+    added = 0
+    for it in tpl.get("items", []):
+        item = ShoppingItem(
+            family_id=user.family_id,
+            added_by=user.user_id,
+            name=it.get("name", ""),
+            supermarket=it.get("supermarket", "Any"),
+            quantity=it.get("quantity", "1"),
+            category=it.get("category", "general"),
+            barcode="",
+            brand="",
+            notes="",
+        )
+        if not item.name.strip():
+            continue
+        doc = item.model_dump()
+        doc["created_at"] = doc["created_at"].isoformat()
+        await db.shopping_items.insert_one(doc)
+        # Increment frequent items
+        name_lower = item.name.strip().lower()
+        await db.frequent_items.update_one(
+            {"family_id": user.family_id, "name_lower": name_lower},
+            {
+                "$set": {
+                    "name": item.name.strip(),
+                    "family_id": user.family_id,
+                    "name_lower": name_lower,
+                    "last_used": datetime.now(timezone.utc).isoformat(),
+                    "supermarket": item.supermarket,
+                    "category": item.category,
+                },
+                "$inc": {"count": 1},
+            },
+            upsert=True,
+        )
+        added += 1
+    return {"added": added}
 
 
 # ============== APP SETUP ==============

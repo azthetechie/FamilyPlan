@@ -17,19 +17,17 @@ function getWeekendDates() {
   return [sat, sun];
 }
 
-function dateKey(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function dateKeyLocal(d) {
+  return dateKey(d);
 }
 
 export default function WeekendCard({ events }) {
   const [sat, sun] = useMemo(() => getWeekendDates(), []);
-  const satKey = dateKey(sat);
-  const sunKey = dateKey(sun);
-  const satEvents = events.filter((e) => e.date === satKey);
-  const sunEvents = events.filter((e) => e.date === sunKey);
+  const satKey = dateKeyLocal(sat);
+  const sunKey = dateKeyLocal(sun);
+  const expanded = useMemo(() => expandEvents(events, sat, sun), [events, sat, sun]);
+  const satEvents = expanded.filter((e) => e.date === satKey);
+  const sunEvents = expanded.filter((e) => e.date === sunKey);
 
   return (
     <div className="neo-card p-5 h-full bg-[#FBF8CC]" data-testid="weekend-card">
@@ -66,9 +64,12 @@ function DayBlock({ label, date, events, accent }) {
       ) : (
         <ul className="space-y-1.5">
           {events.map((e) => (
-            <li key={e.event_id} data-testid={`weekend-event-${e.event_id}`} className="text-sm flex items-center gap-2">
+            <li key={e.occurrence_key || e.event_id} data-testid={`weekend-event-${e.event_id}`} className="text-sm flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: e.color || '#90DBF4' }} />
-              <span className="font-semibold truncate">{e.title}</span>
+              <span className="font-semibold truncate flex items-center gap-1">
+                {e.title}
+                {e.recurring && e.recurring !== 'none' && <Repeat size={11} className="text-gray-500" />}
+              </span>
               {e.time && <span className="text-xs text-gray-500 ml-auto">{e.time}</span>}
             </li>
           ))}

@@ -25,7 +25,9 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        const data = await auth.exchangeSession(sessionId);
+        const inviteToken = sessionStorage.getItem('pending_invite') || null;
+        const data = await auth.exchangeSession(sessionId, inviteToken);
+        if (inviteToken) sessionStorage.removeItem('pending_invite');
         setUser(data);
         window.history.replaceState(null, '', '/dashboard');
         navigate('/dashboard', { replace: true, state: { user: data } });
