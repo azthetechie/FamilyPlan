@@ -1,0 +1,112 @@
+{
+  "theme_archetype": "Archetype 3 (Pastel & Soft) - Light Theme",
+  "domain": "Family Organizer Dashboard",
+  "mood": "Optimistic, light, tactile, highly organized",
+  "typography": {
+    "headings": {
+      "family": "Outfit",
+      "weights": ["400", "600", "800"],
+      "classes": "font-outfit tracking-tight"
+    },
+    "body": {
+      "family": "Figtree",
+      "weights": ["400", "500", "600"],
+      "classes": "font-figtree leading-relaxed"
+    },
+    "hierarchy_rules": [
+      "H1: text-4xl sm:text-5xl font-extrabold tracking-tighter",
+      "H2: text-2xl sm:text-3xl font-bold",
+      "H3: text-xl font-semibold",
+      "Body: text-base text-gray-800",
+      "Overlines: uppercase text-xs tracking-widest font-bold text-gray-500"
+    ]
+  },
+  "colors": {
+    "background": {
+      "main": "#FDFBF7",
+      "tailwind": "bg-[#FDFBF7]"
+    },
+    "surface": {
+      "default": "#FFFFFF",
+      "tailwind": "bg-white"
+    },
+    "accents": {
+      "lavender": "#E0C3FC",
+      "mint": "#B9FBC0",
+      "yellow": "#FBF8CC",
+      "blue": "#90DBF4",
+      "peach": "#FFD6BA"
+    },
+    "text": {
+      "primary": "#111827",
+      "secondary": "#4B5563",
+      "disabled": "#9CA3AF"
+    },
+    "borders": {
+      "hard": "#1F2937",
+      "soft": "#E5E7EB"
+    },
+    "supermarket_tags": {
+      "Coles": "bg-red-100 text-red-800 border-red-200",
+      "Woolworths": "bg-green-100 text-green-800 border-green-200",
+      "Aldi": "bg-blue-100 text-blue-800 border-blue-200",
+      "IGA": "bg-blue-50 text-blue-900 border-blue-200",
+      "Foodworks": "bg-orange-100 text-orange-800 border-orange-200"
+    }
+  },
+  "surfaces_and_layout": {
+    "strategy": "Soft Neo-Brutalism. Use soft pastel colors combined with sharp, distinct borders to prevent the UI from feeling purely childish, maintaining a functional 'dashboard' structure.",
+    "cards": "bg-white border-2 border-gray-900 rounded-xl shadow-[4px_4px_0px_0px_rgba(31,41,55,1)] transition-transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(31,41,55,1)]",
+    "inputs": "bg-white border-2 border-gray-300 focus:border-gray-900 focus:ring-0 rounded-lg shadow-sm focus:shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] transition-all",
+    "buttons": {
+      "primary": "bg-[#B9FBC0] text-gray-900 border-2 border-gray-900 rounded-lg font-bold shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] hover:bg-[#90DBF4] hover:shadow-[4px_4px_0px_0px_rgba(31,41,55,1)] hover:-translate-y-0.5 transition-all",
+      "secondary": "bg-white text-gray-900 border-2 border-gray-900 rounded-lg font-semibold shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] hover:bg-gray-50 transition-all"
+    },
+    "grid": "Bento Control Room grid. Use grid-cols-1 md:grid-cols-4 xl:grid-cols-6 with gap-6. Calendar/Weekend Planner should span 4 cols, Shopping List spans 2 cols."
+  },
+  "components": {
+    "navigation": "Sticky top nav with glassmorphism (backdrop-blur-xl bg-[#FDFBF7]/80) or a solid side-nav on desktop with hard border right.",
+    "calendar": "Shadcn calendar, customized to visually highlight weekends (Sat/Sun) with a different pastel background (e.g., bg-[#FBF8CC]/50).",
+    "shopping_list": "Checkable list items. When checked, apply line-through and text-gray-400. Include a quick-add input with auto-suggest dropdown. Group items by supermarket tags.",
+    "barcode_scanner": "Provide a clean modal/dialog for camera barcode scanning, plus a manual entry fallback text input.",
+    "notes": "Masonry grid or simple list of sticky-note style cards using the varied pastel accent colors.",
+    "icons": "Use 'lucide-react'. Set stroke width to 2.5 for a chunkier, friendlier feel."
+  },
+  "motion_and_interactions": {
+    "hover": "Elements lift slightly (-translate-y-1) and shadows extend to create tactile depth.",
+    "transitions": "Use spring-like transitions (duration-200 ease-out) for satisfying micro-interactions.",
+    "accessibility": "Always ensure focus states have a high-contrast ring or hard border. Respect prefers-reduced-motion."
+  },
+  "testing": {
+    "requirements": "ALL interactive elements MUST include a 'data-testid' attribute (kebab-case, role-based). Examples: 'login-google-button', 'add-child-btn', 'calendar-weekend-view', 'shopping-list-add-input', 'scan-barcode-btn'."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.pexels.com/photos/4260096/pexels-photo-4260096.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Joyful family of four smiling together at the kitchen counter during breakfast time.",
+        "category": "hero_login_background"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1758523417089-62796c788411?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzZ8MHwxfHNlYXJjaHw0fHxoYXBweSUyMGZhbWlseSUyMGtpdGNoZW4lMjBtb3JuaW5nfGVufDB8fHx8MTc3NjY1NTI0Nnww&ixlib=rb-4.1.0&q=85",
+        "description": "Couple in kitchen, man using tablet, woman preparing food.",
+        "category": "onboarding_planning"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1723140796154-7597be5363d8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHw0fHxvcmdhbml6ZWQlMjBncm9jZXJ5JTIwc2hvcHBpbmd8ZW58MHx8fHwxNzc2NjU1MjQ2fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Organized grocery store aisle with fresh produce.",
+        "category": "shopping_list_empty_state_or_header"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Install required fonts from Google Fonts: Outfit and Figtree.",
+    "Install lucide-react for icons.",
+    "Follow the soft neo-brutalist theme strictly: use the pastel colors for backgrounds/accents, but use strong 2px dark borders (#1F2937) and sharp shadows for containers.",
+    "Implement Google SSO using the standard Emergent-managed Google Auth flow.",
+    "For the shopping list, implement a tag system for Australian supermarkets (Coles, Woolworths, Aldi, IGA, Foodworks) using the colors defined in colors.supermarket_tags.",
+    "Build the dashboard using a Bento grid layout, prioritizing the Calendar and Shopping List.",
+    "Implement a barcode scanning capability (mock the camera logic if actual API is unavailable, but build the UI for it).",
+    "Ensure ALL interactive elements contain 'data-testid' attributes."
+  ]
+}
