@@ -30,7 +30,7 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 7. Add/remove children with color-coded profiles
 8. Family-scoped data isolation
 
-## Implemented (Feb 2026)
+## Implemented (Feb–Apr 2026)
 - [x] Backend FastAPI with full CRUD for auth, family, events, shopping, notes, frequent items, barcode lookup
 - [x] MongoDB models with UUID user_id/family_id (avoids _id issues)
 - [x] Emergent Google OAuth flow with 7-day session tokens
@@ -41,7 +41,14 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Notes with color picker, editable, masonry grid
 - [x] Add/remove children with color + age
 - [x] Weekend planner card showing next Sat/Sun events
-- [x] Tested end-to-end: 33/33 backend tests pass, frontend flows verified
+- **Iteration 2 (Apr 2026)**:
+- [x] Parent invitation flow — shareable invite link (?invite=TOKEN) and copyable family code (NEST-XXXX)
+- [x] Join-by-code (safety: only if current family has no data)
+- [x] Family ID & editable family name (displayed & copy-to-clipboard)
+- [x] Recurring events (daily/weekly/monthly with optional end date)
+- [x] Event reminders (15m / 1h / 1day before) — toast + browser Notification
+- [x] Shopping list templates (create/apply/delete, applies all items with frequent-item increment)
+- [x] Tested: backend 35/35 in-scope, 4/4 recurring regression tests green, all frontend flows verified
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)
