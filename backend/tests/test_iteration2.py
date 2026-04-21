@@ -235,6 +235,47 @@ class TestEventRecurring:
         assert stored.get("recur_until") == "2026-05-10", f"recur_until dropped! stored={stored}"
         assert stored.get("reminder_minutes") == 60, f"reminder_minutes dropped! stored={stored}"
 
+    def test_update_event_recurring_fields(self, primary):
+        """PUT should update recurring/reminder values."""
+        assert TestEventRecurring.event_id, "Event must exist from create test"
+        update_payload = {
+            "title": "TEST_Recurring Yoga",
+            "date": "2026-02-10",
+            "time": "08:00",
+            "category": "sport",
+            "recurring": "daily",
+            "recur_until": "2026-03-10",
+            "reminder_minutes": 30,
+        }
+        r = primary.put(f"{API}/events/{TestEventRecurring.event_id}", json=update_payload)
+        assert r.status_code == 200, f"Update failed: {r.text}"
+        updated = r.json()
+        assert updated.get("recurring") == "daily", f"recurring not updated: {updated}"
+        assert updated.get("recur_until") == "2026-03-10", f"recur_until not updated: {updated}"
+        assert updated.get("reminder_minutes") == 30, f"reminder_minutes not updated: {updated}"
+
+    def test_default_values_when_fields_omitted(self, primary):
+        """Events created without recurring/reminder fields should default to none/empty/0."""
+        payload = {
+            "title": "TEST_Plain Event",
+            "date": "2026-02-12",
+        }
+        r = primary.post(f"{API}/events", json=payload)
+        assert r.status_code == 200, f"Create failed: {r.text}"
+        evt = r.json()
+        assert evt.get("recurring") == "none", f"recurring default wrong: {evt.get('recurring')}"
+        assert evt.get("recur_until") == "", f"recur_until default wrong: {evt.get('recur_until')}"
+        assert evt.get("reminder_minutes") == 0, f"reminder_minutes default wrong: {evt.get('reminder_minutes')}"
+        # Verify persistence via GET
+        events = primary.get(f"{API}/events").json()
+        stored = next((e for e in events if e["event_id"] == evt["event_id"]), None)
+        assert stored is not None
+        assert stored.get("recurring") == "none"
+        assert stored.get("recur_until") == ""
+        assert stored.get("reminder_minutes") == 0
+        # Cleanup
+        primary.delete(f"{API}/events/{evt['event_id']}")
+
     def test_cleanup_recurring_event(self, primary):
         if TestEventRecurring.event_id:
             primary.delete(f"{API}/events/{TestEventRecurring.event_id}")

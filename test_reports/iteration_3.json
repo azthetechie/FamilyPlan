@@ -1,0 +1,41 @@
+{
+  "summary": "Re-tested EventCreate Pydantic model fix for recurring/recur_until/reminder_minutes fields. Main agent's fix (server.py lines 60-62) is verified WORKING. POST /api/events persists all 3 new fields (weekly + 2026-05-10 + 60), GET /api/events returns them, PUT /api/events/{id} updates them (daily + 2026-03-10 + 30), and defaults (none/empty/0) are applied when fields are omitted. Extended TestEventRecurring with 2 new tests (PUT update + defaults) - all 4 EventRecurring tests pass. Iteration-2 critical bug is fully resolved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "server.py line 818", "issue": "@app.on_event('shutdown') deprecated in FastAPI - use lifespan context manager (carried over from iter 1/2)."},
+      {"endpoint": "server.py lines 395-397", "issue": "Dead code: for p in parents: if isinstance(...): pass - no-op loop body (carried over)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/iteration3_results.xml",
+    "/app/test_reports/pytest/iteration3_full_results.xml"
+  ],
+  "action_items": [
+    "Recurring/reminder regression is FIXED - no action required for the in-scope bug.",
+    "Optional cleanup: replace deprecated @app.on_event('shutdown') with FastAPI lifespan handler.",
+    "Optional cleanup: remove dead loop in get_family_members (lines 395-397).",
+    "If solo-join test coverage matters next iteration, reseed a fresh solo user via mongosh - the existing one was permanently migrated to primary family in iteration 2."
+  ],
+  "critical_code_review_comments": [
+    "EventCreate model now correctly declares all 3 new optional fields with sane defaults (none/empty/0). Verified Pydantic v2 round-trips them through POST -> Mongo -> GET and PUT -> Mongo -> GET.",
+    "Frontend reminder poller can now reliably read reminder_minutes from /api/events response - end-to-end recurring + reminder feature is unblocked.",
+    "PUT /api/events/{id} uses payload.model_dump() which OVERWRITES all fields. If frontend sends a partial payload it will reset un-sent fields to defaults (recurring='none', etc.). Consider PATCH semantics or document that PUT requires full payload."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py"
+  ],
+  "success_rate": {"backend": "100% (4/4 EventRecurring tests; full suite 35/37 with 2 pre-existing solo-join failures from migrated test data)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "Reused SESSION_TOKEN=test_session_1776655943013 (primary, family-1776655943013). Solo token already consumed in iteration 2.",
+  "seed_data_creation": "None - reused existing seeded users. New test 'test_default_values_when_fields_omitted' creates and self-cleans up a TEST_Plain Event.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 confirmed the EventCreate field-drop bug is fixed. Two pre-existing FamilyJoin failures (test_primary_with_data_cannot_join_solo, test_solo_can_join_primary) remain because the solo user was migrated during iter 2 - reseed via mongosh if those tests need to pass again. Full iteration2 suite: 35/37, with all in-scope tests green. Pytest needs REACT_APP_BACKEND_URL exported in shell since it's only in /app/frontend/.env (not /app/backend/.env).",
+  "rca_of_the_issue": "Iter-2 RCA: EventCreate Pydantic model omitted recurring/recur_until/reminder_minutes; Pydantic v2 default extra='ignore' silently dropped them. Fix (verified): added 3 Optional fields with defaults at server.py lines 60-62. Reproduction (now passing): POST /api/events with full recurring payload then GET -> all 3 fields present and equal to input."
+}

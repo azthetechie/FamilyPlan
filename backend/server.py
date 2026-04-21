@@ -57,6 +57,9 @@ class EventCreate(BaseModel):
     category: Optional[str] = "general"  # general | school | sport | family | work | weekend
     assigned_to: Optional[List[str]] = []  # user_ids or child_ids
     color: Optional[str] = "#90DBF4"
+    recurring: Optional[str] = "none"  # none | daily | weekly | monthly
+    recur_until: Optional[str] = ""  # ISO date YYYY-MM-DD, empty = no end
+    reminder_minutes: Optional[int] = 0  # 0 = off, else minutes before event
 
 
 class Event(EventCreate):
