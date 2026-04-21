@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell, Pencil, SkipForward } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { events as eventsApi } from '../lib/api';
 import { toast } from 'sonner';
@@ -268,6 +268,9 @@ export default function CalendarCard({ events, members, onChange }) {
                     ? editMode === 'single' ? 'Edit this occurrence' : 'Edit series'
                     : 'New Event'}
                 </DialogTitle>
+                <DialogDescription>
+                  Set a title, date, time, category, recurring rule and reminder.
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3 pt-2">
                 <input
@@ -550,6 +553,9 @@ export default function CalendarCard({ events, members, onChange }) {
             <DialogTitle className="font-outfit text-xl">
               {actionDialog?.action === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}
             </DialogTitle>
+            <DialogDescription>
+              Choose whether to affect just this occurrence or the entire series.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-gray-600">

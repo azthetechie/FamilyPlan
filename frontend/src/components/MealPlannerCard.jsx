@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, Fragment } from 'react';
-import { UtensilsCrossed, Plus, Trash2, ChevronLeft, ChevronRight, ShoppingBag, Pencil } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { UtensilsCrossed, Plus, Trash2, ChevronLeft, ChevronRight, ShoppingBag, Pencil, BookmarkPlus } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { meals as mealsApi } from '../lib/api';
 import { toast } from 'sonner';
 import { dateKey, parseDate } from '../lib/events';
+import MealTemplatesModal from './MealTemplatesModal';
 
 const MEAL_TYPES = [
   { value: 'breakfast', label: 'Breakfast', icon: '🥞', color: '#FFD6BA' },
@@ -37,6 +38,7 @@ export default function MealPlannerCard() {
   const [form, setForm] = useState({ date: '', meal_type: 'dinner', name: '', ingredients: '', notes: '' });
   const [sendOpen, setSendOpen] = useState(false);
   const [sendSupermarket, setSendSupermarket] = useState('Any');
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekEnd = days[6];
@@ -180,6 +182,15 @@ export default function MealPlannerCard() {
             <ChevronRight size={14} />
           </button>
           <button
+            data-testid="meal-templates-btn"
+            onClick={() => setTemplatesOpen(true)}
+            className="neo-btn bg-[#E0C3FC] px-3 py-1.5 text-sm inline-flex items-center gap-1"
+            title="Meal templates"
+          >
+            <BookmarkPlus size={14} strokeWidth={3} />
+            Templates
+          </button>
+          <button
             data-testid="meal-send-to-shopping-btn"
             onClick={() => setSendOpen(true)}
             disabled={totalIngredients === 0}
@@ -289,6 +300,9 @@ export default function MealPlannerCard() {
             <DialogTitle className="font-outfit text-2xl">
               {editing ? 'Edit meal' : 'Plan a meal'}
             </DialogTitle>
+            <DialogDescription>
+              {editing ? 'Update the meal name or ingredients.' : 'Pick a day, meal time, and add ingredients you\'ll need.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3 pt-2">
             <div className="grid grid-cols-2 gap-3">
@@ -357,6 +371,9 @@ export default function MealPlannerCard() {
         <DialogContent className="bg-[#FDFBF7] border-2 border-gray-900 shadow-[4px_4px_0px_0px_rgba(31,41,55,1)] max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-outfit text-xl">Send to shopping</DialogTitle>
+            <DialogDescription>
+              Add this week's meal ingredients to your shopping list, tagged with the supermarket you choose.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-2">
             <p className="text-sm text-gray-600">
@@ -387,6 +404,13 @@ export default function MealPlannerCard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <MealTemplatesModal
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        onApplied={load}
+        weekDates={days}
+      />
     </div>
   );
 }

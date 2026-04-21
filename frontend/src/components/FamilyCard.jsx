@@ -3,7 +3,7 @@ import {
   Users, Plus, X, UserCircle, UserPlus, Copy, Check, Link as LinkIcon,
   Pencil, ArrowRightLeft, Trash2, Hash, Crown,
 } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { family } from '../lib/api';
 import { toast } from 'sonner';
@@ -258,6 +258,7 @@ export default function FamilyCard({ members, onChange, currentUser }) {
         <DialogContent className="bg-[#FDFBF7] border-2 border-gray-900 shadow-[4px_4px_0px_0px_rgba(31,41,55,1)]">
           <DialogHeader>
             <DialogTitle className="font-outfit text-2xl">Add a child</DialogTitle>
+            <DialogDescription>Add a child to your family with name, age and a colour.</DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3 pt-2">
             <input
@@ -364,6 +365,9 @@ function InviteModal({ open, onOpenChange, invites, reloadInvites, familyCode })
           <DialogTitle className="font-outfit text-2xl flex items-center gap-2">
             <UserPlus size={22} /> Invite your partner
           </DialogTitle>
+          <DialogDescription>
+            Generate a one-time invite link or share your family ID code so your partner can join your family.
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="link" className="pt-2">
@@ -493,6 +497,9 @@ function JoinFamilyModal({ open, onOpenChange, onJoined }) {
           <DialogTitle className="font-outfit text-2xl flex items-center gap-2">
             <ArrowRightLeft size={22} /> Join a family
           </DialogTitle>
+          <DialogDescription>
+            Enter a family ID (e.g. NEST-AB12) to join your partner's family.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 pt-2">
           <p className="text-sm text-gray-600">Enter your partner's family ID (e.g. <code className="font-mono font-bold">NEST-AB12</code>).</p>

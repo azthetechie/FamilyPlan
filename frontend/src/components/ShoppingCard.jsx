@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ShoppingBag, Plus, Trash2, ScanLine, Check, Camera, X, Sparkles, ClipboardList, ShoppingCart } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { shopping as shoppingApi } from '../lib/api';
 import { toast } from 'sonner';
@@ -304,6 +304,9 @@ export default function ShoppingCard({ items, frequent, onChange }) {
             <DialogTitle className="font-outfit text-2xl flex items-center gap-2">
               <ScanLine size={22} /> Scan barcode
             </DialogTitle>
+            <DialogDescription>
+              Scan a product barcode with your device camera or enter it manually.
+            </DialogDescription>
           </DialogHeader>
           <BarcodeScanner onResult={onScanResult} onClose={() => setScanOpen(false)} />
         </DialogContent>

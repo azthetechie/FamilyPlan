@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { ShoppingCart, Check, ChevronLeft, X, Trophy } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { shopping as shoppingApi } from '../lib/api';
@@ -146,31 +146,7 @@ export default function CheckoutMode({ open, onOpenChange, items, onChange }) {
               <ul className="space-y-2" data-testid="checkout-item-list">
                 {currentItems.map((it) => (
                   <li key={it.item_id}>
-                    <button
-                      data-testid={`checkout-item-${it.item_id}`}
-                      onClick={() => toggle(it.item_id)}
-                      className={`w-full flex items-center gap-3 p-4 border-2 border-gray-900 rounded-lg text-left transition-all ${
-                        it.checked
-                          ? 'bg-[#B9FBC0]/40 shadow-[1px_1px_0px_0px_rgba(31,41,55,1)]'
-                          : 'bg-white shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] hover:-translate-y-0.5'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 border-2 border-gray-900 rounded flex items-center justify-center flex-shrink-0 ${it.checked ? 'bg-[#B9FBC0]' : 'bg-white'}`}>
-                        {it.checked && <Check size={16} strokeWidth={3} />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-outfit font-bold text-base ${it.checked ? 'line-through text-gray-400' : ''}`}>
-                          {it.name}
-                        </div>
-                        {(it.brand || it.quantity) && (
-                          <div className="text-xs text-gray-600">
-                            {it.quantity && `Qty ${it.quantity}`}
-                            {it.quantity && it.brand && ' · '}
-                            {it.brand}
-                          </div>
-                        )}
-                      </div>
-                    </button>
+                    <SwipeRow item={it} onToggle={() => toggle(it.item_id)} />
                   </li>
                 ))}
               </ul>
@@ -198,5 +174,78 @@ export default function CheckoutMode({ open, onOpenChange, items, onChange }) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SwipeRow({ item, onToggle }) {
+  const [dx, setDx] = useState(0);
+  const startX = useRef(null);
+  const triggered = useRef(false);
+  const SWIPE_THRESHOLD = 70;
+
+  const onTouchStart = (e) => {
+    triggered.current = false;
+    startX.current = e.touches[0].clientX;
+  };
+  const onTouchMove = (e) => {
+    if (startX.current == null) return;
+    const delta = e.touches[0].clientX - startX.current;
+    // Only allow right-swipe (toggle on); cap at 120 for visual feedback
+    setDx(Math.max(0, Math.min(delta, 120)));
+    if (delta > SWIPE_THRESHOLD && !triggered.current) {
+      triggered.current = true;
+      onToggle();
+      // Snap back
+      setTimeout(() => setDx(0), 180);
+      startX.current = null;
+    }
+  };
+  const onTouchEnd = () => {
+    startX.current = null;
+    setDx(0);
+  };
+  const onTouchCancel = () => { startX.current = null; setDx(0); };
+
+  return (
+    <div className="relative overflow-hidden rounded-lg" data-testid={`checkout-item-wrap-${item.item_id}`}>
+      {/* swipe-action background */}
+      <div
+        className="absolute inset-0 flex items-center justify-start pl-5 pointer-events-none rounded-lg"
+        style={{ backgroundColor: '#B9FBC0', opacity: dx / 120 }}
+      >
+        <Check size={20} strokeWidth={3} />
+        <span className="ml-2 text-xs uppercase tracking-widest font-bold">Swipe to check</span>
+      </div>
+      <button
+        data-testid={`checkout-item-${item.item_id}`}
+        onClick={onToggle}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
+        style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? 'transform 0.18s ease-out' : 'none' }}
+        className={`relative w-full flex items-center gap-3 p-4 border-2 border-gray-900 rounded-lg text-left ${
+          item.checked
+            ? 'bg-[#B9FBC0]/40 shadow-[1px_1px_0px_0px_rgba(31,41,55,1)]'
+            : 'bg-white shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] hover:-translate-y-0.5'
+        }`}
+      >
+        <div className={`w-7 h-7 border-2 border-gray-900 rounded flex items-center justify-center flex-shrink-0 ${item.checked ? 'bg-[#B9FBC0]' : 'bg-white'}`}>
+          {item.checked && <Check size={16} strokeWidth={3} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className={`font-outfit font-bold text-base ${item.checked ? 'line-through text-gray-400' : ''}`}>
+            {item.name}
+          </div>
+          {(item.brand || item.quantity) && (
+            <div className="text-xs text-gray-600">
+              {item.quantity && `Qty ${item.quantity}`}
+              {item.quantity && item.brand && ' · '}
+              {item.brand}
+            </div>
+          )}
+        </div>
+      </button>
+    </div>
   );
 }

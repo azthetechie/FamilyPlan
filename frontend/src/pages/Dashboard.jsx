@@ -98,7 +98,7 @@ export default function Dashboard() {
     if (!user) return;
     const poll = async () => {
       try {
-        const items = await activity.list(lastActivitySeenRef.current);
+        const items = await activity.list({ since: lastActivitySeenRef.current });
         if (!items || items.length === 0) return;
         const fresh = [...items].reverse();
         let changedFromOthers = false;

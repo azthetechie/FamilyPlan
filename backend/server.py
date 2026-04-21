@@ -100,6 +100,25 @@ class MealsToShoppingInput(BaseModel):
     supermarket: Optional[str] = "Any"
 
 
+class MealTemplateCreate(BaseModel):
+    name: str
+    meal_type_default: Optional[str] = "dinner"
+    ingredients: List[str] = []
+    notes: Optional[str] = ""
+
+
+class MealTemplate(MealTemplateCreate):
+    meal_template_id: str = Field(default_factory=lambda: f"mtpl_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    created_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class MealTemplateApplyInput(BaseModel):
+    date: str  # YYYY-MM-DD
+    meal_type: str  # breakfast | lunch | dinner | snack
+
+
 class ShoppingItemCreate(BaseModel):
     name: str
     quantity: Optional[str] = "1"
@@ -825,6 +844,75 @@ async def meals_to_shopping(payload: MealsToShoppingInput, request: Request):
             )
     await log_activity(user.family_id, user.user_id, user.name, "meals.to_shopping", f"sent {added} meal ingredients to shopping")
     return {"added": added}
+
+
+# ============== MEAL TEMPLATES ==============
+@api_router.get("/meals/templates")
+async def list_meal_templates(request: Request):
+    user = await get_current_user(request)
+    templates = await db.meal_templates.find(
+        {"family_id": user.family_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+    return templates
+
+
+@api_router.post("/meals/templates")
+async def create_meal_template(payload: MealTemplateCreate, request: Request):
+    user = await get_current_user(request)
+    tpl = MealTemplate(family_id=user.family_id, created_by=user.user_id, **payload.model_dump())
+    doc = tpl.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.meal_templates.insert_one(doc)
+    return tpl.model_dump()
+
+
+@api_router.put("/meals/templates/{template_id}")
+async def update_meal_template(template_id: str, payload: MealTemplateCreate, request: Request):
+    user = await get_current_user(request)
+    result = await db.meal_templates.update_one(
+        {"meal_template_id": template_id, "family_id": user.family_id},
+        {"$set": payload.model_dump()},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Meal template not found")
+    updated = await db.meal_templates.find_one({"meal_template_id": template_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/meals/templates/{template_id}")
+async def delete_meal_template(template_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.meal_templates.delete_one(
+        {"meal_template_id": template_id, "family_id": user.family_id}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Meal template not found")
+    return {"ok": True}
+
+
+@api_router.post("/meals/templates/{template_id}/apply")
+async def apply_meal_template(template_id: str, payload: MealTemplateApplyInput, request: Request):
+    """Apply a meal template to a specific date + meal_type slot."""
+    user = await get_current_user(request)
+    tpl = await db.meal_templates.find_one(
+        {"meal_template_id": template_id, "family_id": user.family_id}, {"_id": 0}
+    )
+    if not tpl:
+        raise HTTPException(status_code=404, detail="Meal template not found")
+    meal = Meal(
+        family_id=user.family_id,
+        created_by=user.user_id,
+        date=payload.date,
+        meal_type=payload.meal_type,
+        name=tpl.get("name", ""),
+        ingredients=tpl.get("ingredients", []),
+        notes=tpl.get("notes", ""),
+    )
+    doc = meal.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.meals.insert_one(doc)
+    await log_activity(user.family_id, user.user_id, user.name, "meal.create", f"planned \"{meal.name}\" for {meal.meal_type} on {meal.date} (from template)", meal.meal_id)
+    return meal.model_dump()
 
 
 # ============== OWNERSHIP ==============

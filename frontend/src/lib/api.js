@@ -90,8 +90,16 @@ export const meals = {
   delete: (id) => api.delete(`/meals/${id}`).then((r) => r.data),
   toShopping: (start_date, end_date, supermarket = 'Any') =>
     api.post('/meals/to-shopping', { start_date, end_date, supermarket }).then((r) => r.data),
+  templates: {
+    list: () => api.get('/meals/templates').then((r) => r.data),
+    create: (payload) => api.post('/meals/templates', payload).then((r) => r.data),
+    update: (id, payload) => api.put(`/meals/templates/${id}`, payload).then((r) => r.data),
+    delete: (id) => api.delete(`/meals/templates/${id}`).then((r) => r.data),
+    apply: (id, date, meal_type) =>
+      api.post(`/meals/templates/${id}/apply`, { date, meal_type }).then((r) => r.data),
+  },
 };
 
 export const activity = {
-  list: (since) => api.get('/activity', { params: since ? { since } : {} }).then((r) => r.data),
+  list: (params = {}) => api.get('/activity', { params }).then((r) => r.data),
 };

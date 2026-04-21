@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ClipboardList, Plus, Trash2, Play, X } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { shopping } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -79,6 +79,9 @@ export default function TemplatesModal({ open, onOpenChange, onApplied }) {
           <DialogTitle className="font-outfit text-2xl flex items-center gap-2">
             <ClipboardList size={22} /> Shopping Templates
           </DialogTitle>
+          <DialogDescription>
+            Save your typical weekly shop and apply it with one click to populate the list.
+          </DialogDescription>
         </DialogHeader>
 
         {mode === 'list' && (

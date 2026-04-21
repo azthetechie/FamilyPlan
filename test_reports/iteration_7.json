@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 7 full verification. Backend: 10/11 new tests pass in test_iteration6_v2.py. CRITICAL BUG found — GET /api/activity does NOT implement the `before` cursor parameter required by the spec; the endpoint signature (server.py:742) only takes `since` and `limit`. Frontend ActivityPage sends `before` but it is silently ignored, so the 'Load older' button, once items > 50, will re-return the same newest page instead of older rows. Regression: 26/26 of test_iteration5 + test_iteration4 still green. Frontend: Activity nav link + /activity page load and render 30 grouped-by-day items correctly; MealPlannerCard → Templates modal → create → apply → meal created end-to-end works (28 day×meal-type apply slots shown); CheckoutMode renders SwipeRow wrappers with checkout-item-wrap-{id} test_ids; zero Radix DialogDescription a11y warnings (previous iteration's warnings are fully cleared).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/activity", "issue": "Missing `before` cursor query param. server.py line 742 signature is `list_activity(request, since, limit)` — no `before`. Spec requires: returns items with created_at < before. Fix: add `before: Optional[str] = None` param, and in the query builder add `q['created_at'] = {'$lt': before}` (merging with existing $gt when both present). Test test_activity_before_cursor_pagination confirms first-page/second-page overlap because cursor is ignored.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "log_activity", "issue": "Still uses bare `except Exception: pass`. Carried from prior iteration."},
+      {"endpoint": "POST /api/meals/to-shopping", "issue": "No validation that end_date >= start_date. Carried."},
+      {"endpoint": "@app.on_event('shutdown')", "issue": "Deprecated FastAPI hook. Carried."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "ActivityPage 'Load older' pagination", "issue": "Frontend correctly sends ?before=<iso> but backend ignores it, so clicking Load older will duplicate already-shown items (or hasMore turns false after first page if < 50 items). Strictly a backend bug, but user-visible in the frontend.", "affected_selectors": ["activity-load-more-btn"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_v2.py",
+    "/app/test_reports/pytest/iteration7_results.xml"
+  ],
+  "action_items": [
+    "[HIGH] Add `before: Optional[str] = None` to GET /api/activity and merge into query: if before: q.setdefault('created_at', {})['$lt'] = before. One-line fix in server.py around line 742."
+  ],
+  "critical_code_review_comments": [
+    "Meal templates CRUD is clean, correctly scoped by family_id, idempotent delete (second DELETE → 404 as expected), and apply endpoint copies name+ingredients+notes from template to Meal and logs activity with '(from template)' suffix — verified.",
+    "api.js `activity.list(params={})` signature is backwards-compatible with the dashboard poller that still calls activity.list({since: lastSeenTs}) — no regression in dashboard activity toast stream.",
+    "MealTemplatesModal UX: 28 apply slots (7 days × 4 meal types) rendered with deterministic testids `apply-tpl-{YYYY-MM-DD}-{meal_type}`. Good for automation.",
+    "CheckoutMode SwipeRow wires onTouchStart/Move/End to the inner button[data-testid=checkout-item-{id}]; tap (click) handler preserved. Wrapper uses data-testid=checkout-item-wrap-{id} as spec'd.",
+    "Radix DialogDescription audit is complete — zero missing-aria-describedby warnings observed across Activity, MealTemplatesModal, and CheckoutMode modal during this run (previous iteration had 3).",
+    "ActivityPage `hasMore` turns false once data.length < 50, correctly hiding the Load older button when the first page itself is under-limit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_v2.py (NEW - 11 tests)"
+  ],
+  "success_rate": {"backend": "91% (10/11 new + 26/26 regression = 36/37)", "frontend": "100% smoke — activity page, meal-template create+apply, checkout SwipeRow wrappers, zero Radix warnings"},
+  "test_credentials": "Reused SESSION_TOKEN=test_session_1776655943013 from /app/memory/test_credentials.md.",
+  "seed_data_creation": "All test-created meal templates and meals are cleaned up in zz_cleanup. UI test created/deleted TEST_UI_Taco_Tuesday template and TEST_UI_SwipeItem shopping item.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent adds `before` cursor support to GET /api/activity, re-run `cd /app/backend && python -m pytest tests/test_iteration6_v2.py::test_activity_before_cursor_pagination tests/test_iteration5.py tests/test_iteration4.py -v`. The full regression suite is test_iteration4.py + test_iteration5.py + test_iteration6_v2.py = 37 tests. No UI re-test needed for the fix; ActivityPage already calls the endpoint correctly.",
+  "rca_of_the_issue": "Root cause: During iteration-6 implementation, api.js + ActivityPage.jsx + backend server.py were changed together to support pagination, but only the `since` branch of the $gt filter was retained in backend. The new `before` parameter was added to the frontend and api.js signature but the corresponding backend parameter and $lt filter were never added. Reproduction: Call `curl -H 'Authorization: Bearer test_session_1776655943013' '$URL/api/activity?limit=2'` to get newest 2, take oldest `created_at`, then call `...?before=<that>&limit=5` — response still contains the newest rows instead of rows older than the cursor. Mitigation: 2-line backend change (add param + merge into Mongo query using $lt). Test `test_activity_before_cursor_pagination` will validate."
+}

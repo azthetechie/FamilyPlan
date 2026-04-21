@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { StickyNote, Plus, Trash2, X } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { notes as notesApi } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -112,6 +112,7 @@ export default function NotesCard({ notes, onChange }) {
         <DialogContent className="bg-[#FDFBF7] border-2 border-gray-900 shadow-[4px_4px_0px_0px_rgba(31,41,55,1)]">
           <DialogHeader>
             <DialogTitle className="font-outfit text-2xl">{editing ? 'Edit note' : 'New note'}</DialogTitle>
+            <DialogDescription>Write a short title and content. Pick a colour for the sticky note.</DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3 pt-2">
             <input
