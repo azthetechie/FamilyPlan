@@ -75,6 +75,31 @@ class ExceptionInput(BaseModel):
     date: str  # YYYY-MM-DD
 
 
+class MealCreate(BaseModel):
+    date: str  # YYYY-MM-DD
+    meal_type: str  # breakfast | lunch | dinner | snack
+    name: str
+    ingredients: List[str] = []
+    notes: Optional[str] = ""
+
+
+class Meal(MealCreate):
+    meal_id: str = Field(default_factory=lambda: f"meal_{uuid.uuid4().hex[:12]}")
+    family_id: str
+    created_by: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class TransferOwnerInput(BaseModel):
+    to_user_id: str
+
+
+class MealsToShoppingInput(BaseModel):
+    start_date: str  # YYYY-MM-DD (inclusive)
+    end_date: str  # YYYY-MM-DD (inclusive)
+    supermarket: Optional[str] = "Any"
+
+
 class ShoppingItemCreate(BaseModel):
     name: str
     quantity: Optional[str] = "1"
@@ -171,6 +196,23 @@ async def get_or_create_family_meta(family_id: str, name_hint: str = ""):
     }
     await db.families.insert_one(new_doc)
     return new_doc
+
+
+async def log_activity(family_id: str, user_id: str, user_name: str, action: str, summary: str, target_id: str = ""):
+    """Append an activity log entry (non-blocking best effort)."""
+    try:
+        await db.activity_log.insert_one({
+            "activity_id": f"act_{uuid.uuid4().hex[:12]}",
+            "family_id": family_id,
+            "user_id": user_id,
+            "user_name": user_name,
+            "action": action,  # e.g. shopping.add, note.create, event.create, meal.create
+            "summary": summary,
+            "target_id": target_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
 
 
 # ============== AUTH HELPERS ==============
@@ -447,6 +489,7 @@ async def create_event(payload: EventCreate, request: Request):
     doc = event.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.events.insert_one(doc)
+    await log_activity(user.family_id, user.user_id, user.name, "event.create", f"added event \"{event.title}\"", event.event_id)
     return event.model_dump()
 
 
@@ -534,6 +577,7 @@ async def add_shopping(payload: ShoppingItemCreate, request: Request):
             },
             upsert=True,
         )
+    await log_activity(user.family_id, user.user_id, user.name, "shopping.add", f"added \"{payload.name.strip()}\" to shopping", item.item_id)
     return item.model_dump()
 
 
@@ -640,6 +684,8 @@ async def create_note(payload: NoteCreate, request: Request):
     doc["created_at"] = doc["created_at"].isoformat()
     doc["updated_at"] = doc["updated_at"].isoformat()
     await db.notes.insert_one(doc)
+    preview = (note.title or note.content[:40] or "a note").strip()
+    await log_activity(user.family_id, user.user_id, user.name, "note.create", f"wrote \"{preview}\"", note.note_id)
     return note.model_dump()
 
 
@@ -669,7 +715,133 @@ async def delete_note(note_id: str, request: Request):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Family Organizer API", "version": "1.1"}
+    return {"message": "Family Organizer API", "version": "1.2"}
+
+
+# ============== ACTIVITY FEED ==============
+@api_router.get("/activity")
+async def list_activity(request: Request, since: Optional[str] = None, limit: int = 50):
+    user = await get_current_user(request)
+    q = {"family_id": user.family_id}
+    if since:
+        q["created_at"] = {"$gt": since}
+    items = await db.activity_log.find(q, {"_id": 0}).sort("created_at", -1).limit(min(limit, 200)).to_list(200)
+    return items
+
+
+# ============== MEAL PLANNER ==============
+@api_router.get("/meals")
+async def list_meals(request: Request, start_date: Optional[str] = None, end_date: Optional[str] = None):
+    user = await get_current_user(request)
+    q = {"family_id": user.family_id}
+    if start_date and end_date:
+        q["date"] = {"$gte": start_date, "$lte": end_date}
+    meals = await db.meals.find(q, {"_id": 0}).sort("date", 1).to_list(500)
+    return meals
+
+
+@api_router.post("/meals")
+async def create_meal(payload: MealCreate, request: Request):
+    user = await get_current_user(request)
+    meal = Meal(family_id=user.family_id, created_by=user.user_id, **payload.model_dump())
+    doc = meal.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.meals.insert_one(doc)
+    await log_activity(user.family_id, user.user_id, user.name, "meal.create", f"planned \"{meal.name}\" for {meal.meal_type} on {meal.date}", meal.meal_id)
+    return meal.model_dump()
+
+
+@api_router.put("/meals/{meal_id}")
+async def update_meal(meal_id: str, payload: MealCreate, request: Request):
+    user = await get_current_user(request)
+    result = await db.meals.update_one(
+        {"meal_id": meal_id, "family_id": user.family_id},
+        {"$set": payload.model_dump()},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    updated = await db.meals.find_one({"meal_id": meal_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/meals/{meal_id}")
+async def delete_meal(meal_id: str, request: Request):
+    user = await get_current_user(request)
+    result = await db.meals.delete_one({"meal_id": meal_id, "family_id": user.family_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    return {"ok": True}
+
+
+@api_router.post("/meals/to-shopping")
+async def meals_to_shopping(payload: MealsToShoppingInput, request: Request):
+    """Aggregate ingredients from meals in date range and add to shopping list."""
+    user = await get_current_user(request)
+    meals = await db.meals.find(
+        {"family_id": user.family_id, "date": {"$gte": payload.start_date, "$lte": payload.end_date}},
+        {"_id": 0},
+    ).to_list(500)
+    seen_lower = set()
+    added = 0
+    for m in meals:
+        for raw in (m.get("ingredients") or []):
+            name = (raw or "").strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen_lower:
+                continue
+            seen_lower.add(key)
+            item = ShoppingItem(
+                family_id=user.family_id,
+                added_by=user.user_id,
+                name=name,
+                supermarket=payload.supermarket or "Any",
+                category="meal-plan",
+                quantity="1",
+                brand="",
+                barcode="",
+                notes=f"From meal plan ({payload.start_date} to {payload.end_date})",
+            )
+            doc = item.model_dump()
+            doc["created_at"] = doc["created_at"].isoformat()
+            await db.shopping_items.insert_one(doc)
+            added += 1
+            # Frequent items
+            await db.frequent_items.update_one(
+                {"family_id": user.family_id, "name_lower": key},
+                {
+                    "$set": {
+                        "name": name,
+                        "family_id": user.family_id,
+                        "name_lower": key,
+                        "last_used": datetime.now(timezone.utc).isoformat(),
+                        "supermarket": payload.supermarket or "Any",
+                        "category": "meal-plan",
+                    },
+                    "$inc": {"count": 1},
+                },
+                upsert=True,
+            )
+    await log_activity(user.family_id, user.user_id, user.name, "meals.to_shopping", f"sent {added} meal ingredients to shopping")
+    return {"added": added}
+
+
+# ============== OWNERSHIP ==============
+@api_router.post("/family/transfer-ownership")
+async def transfer_ownership(payload: TransferOwnerInput, request: Request):
+    user = await get_current_user(request)
+    if not user.is_owner:
+        raise HTTPException(status_code=403, detail="Only the current owner can transfer ownership")
+    if payload.to_user_id == user.user_id:
+        raise HTTPException(status_code=400, detail="You are already the owner")
+    target = await db.users.find_one({"user_id": payload.to_user_id, "family_id": user.family_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Target parent not found in your family")
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"is_owner": False}})
+    await db.users.update_one({"user_id": payload.to_user_id}, {"$set": {"is_owner": True}})
+    await log_activity(user.family_id, user.user_id, user.name, "family.transfer_ownership", f"transferred ownership to {target.get('name', 'partner')}")
+    return {"ok": True, "new_owner_id": payload.to_user_id}
 
 
 # ============== PARENT INVITES ==============

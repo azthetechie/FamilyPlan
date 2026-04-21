@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Users, Plus, X, UserCircle, UserPlus, Copy, Check, Link as LinkIcon,
-  Pencil, ArrowRightLeft, Trash2, Hash,
+  Pencil, ArrowRightLeft, Trash2, Hash, Crown,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
@@ -22,6 +22,20 @@ export default function FamilyCard({ members, onChange, currentUser }) {
   const [nameDraft, setNameDraft] = useState('');
 
   const isOwner = currentUser?.is_owner !== false; // defaults true for legacy accounts
+
+  const transferOwnership = async (toUser) => {
+    if (!window.confirm(`Transfer ownership to ${toUser.name}? You will no longer be able to rename the family or transfer ownership.`)) return;
+    try {
+      await family.transferOwnership(toUser.user_id);
+      toast.success(`Ownership transferred to ${toUser.name}`);
+      onChange();
+      loadInfo();
+      // Refresh the page so /auth/me returns updated is_owner for current user
+      window.location.reload();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Failed to transfer');
+    }
+  };
 
   const loadInfo = async () => {
     try {
@@ -177,7 +191,7 @@ export default function FamilyCard({ members, onChange, currentUser }) {
           <div
             key={p.user_id}
             data-testid={`member-parent-${p.user_id}`}
-            className="flex items-center gap-3 px-4 py-2.5 border-2 border-gray-900 rounded-full bg-[#90DBF4] shadow-[2px_2px_0px_0px_rgba(31,41,55,1)]"
+            className="flex items-center gap-3 px-4 py-2.5 border-2 border-gray-900 rounded-full bg-[#90DBF4] shadow-[2px_2px_0px_0px_rgba(31,41,55,1)] group"
           >
             {p.picture ? (
               <img src={p.picture} alt={p.name} className="w-8 h-8 rounded-full border border-gray-900" />
@@ -188,13 +202,24 @@ export default function FamilyCard({ members, onChange, currentUser }) {
               <div className="font-outfit font-bold text-sm leading-none flex items-center gap-1">
                 {p.name}
                 {p.is_owner && (
-                  <span data-testid={`owner-badge-${p.user_id}`} className="ml-0.5 px-1.5 py-0.5 rounded bg-[#FBF8CC] border border-gray-900 text-[9px] uppercase tracking-widest font-bold">
+                  <span data-testid={`owner-badge-${p.user_id}`} className="ml-0.5 px-1.5 py-0.5 rounded bg-[#FBF8CC] border border-gray-900 text-[9px] uppercase tracking-widest font-bold inline-flex items-center gap-0.5">
+                    <Crown size={9} strokeWidth={3} />
                     Owner
                   </span>
                 )}
               </div>
               <div className="text-[10px] uppercase tracking-widest font-bold text-gray-700 mt-0.5">Parent</div>
             </div>
+            {isOwner && !p.is_owner && currentUser?.user_id !== p.user_id && (
+              <button
+                data-testid={`transfer-owner-${p.user_id}`}
+                onClick={() => transferOwnership(p)}
+                className="ml-1 opacity-0 group-hover:opacity-100 text-gray-700 hover:text-[#B45309] transition-opacity"
+                title={`Transfer ownership to ${p.name}`}
+              >
+                <Crown size={14} strokeWidth={2.5} />
+              </button>
+            )}
           </div>
         ))}
         {members.children.map((c) => (

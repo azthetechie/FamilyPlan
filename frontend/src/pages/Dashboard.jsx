@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { events, shopping, notes, family } from '../lib/api';
+import { events, shopping, notes, family, activity } from '../lib/api';
 import Navigation from '../components/Navigation';
 import CalendarCard from '../components/CalendarCard';
 import ShoppingCard from '../components/ShoppingCard';
 import NotesCard from '../components/NotesCard';
 import FamilyCard from '../components/FamilyCard';
 import WeekendCard from '../components/WeekendCard';
+import MealPlannerCard from '../components/MealPlannerCard';
 import { Toaster, toast } from 'sonner';
 import { nextOccurrenceDateTime } from '../lib/events';
-import { Bell } from 'lucide-react';
+import { Bell, Sparkles as SparkIcon } from 'lucide-react';
 
 export default function Dashboard() {
   const { user, loading } = useAuth();
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [noteList, setNoteList] = useState([]);
   const [members, setMembers] = useState({ parents: [], children: [] });
   const firedRemindersRef = useRef(new Set());
+  const lastActivitySeenRef = useRef(new Date().toISOString());
 
   const refresh = useCallback(async () => {
     try {
@@ -49,6 +51,78 @@ export default function Dashboard() {
     }
     if (user) refresh();
   }, [user, loading, navigate, refresh]);
+
+  // Ask browser notification permission once
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // Reminder poller — checks upcoming events every 30s
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      for (const e of eventList) {
+        const mins = e.reminder_minutes || 0;
+        if (!mins || !e.time) continue;
+        const nextDt = nextOccurrenceDateTime(e, now);
+        if (!nextDt) continue;
+        const fireAt = new Date(nextDt.getTime() - mins * 60000);
+        const key = `${e.event_id}_${nextDt.toISOString()}`;
+        if (firedRemindersRef.current.has(key)) continue;
+        const windowMs = 30_000;
+        if (now >= fireAt && now <= new Date(fireAt.getTime() + windowMs * 4)) {
+          firedRemindersRef.current.add(key);
+          const timeLabel = nextDt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          toast(`Reminder: ${e.title}`, {
+            description: `Starts at ${timeLabel}`,
+            icon: <Bell size={16} />,
+            duration: 10000,
+          });
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              new Notification(`Reminder: ${e.title}`, { body: `Starts at ${timeLabel}` });
+            } catch { /* noop */ }
+          }
+        }
+      }
+    };
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
+  }, [eventList]);
+
+  // Activity feed poller — toast on new activity from OTHER parents
+  useEffect(() => {
+    if (!user) return;
+    const poll = async () => {
+      try {
+        const items = await activity.list(lastActivitySeenRef.current);
+        if (!items || items.length === 0) return;
+        const fresh = [...items].reverse();
+        let changedFromOthers = false;
+        for (const a of fresh) {
+          if (a.user_id !== user.user_id) {
+            changedFromOthers = true;
+            toast(`${a.user_name}`, {
+              description: a.summary,
+              icon: <SparkIcon size={16} />,
+              duration: 6000,
+            });
+          }
+          if (a.created_at > lastActivitySeenRef.current) {
+            lastActivitySeenRef.current = a.created_at;
+          }
+        }
+        if (changedFromOthers) refresh();
+      } catch {
+        // silently ignore
+      }
+    };
+    const id = setInterval(poll, 30_000);
+    return () => clearInterval(id);
+  }, [user, refresh]);
 
   if (loading || !user) return null;
 
@@ -89,6 +163,11 @@ export default function Dashboard() {
           {/* Notes - 4 cols */}
           <div className="md:col-span-4 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <NotesCard notes={noteList} onChange={refresh} />
+          </div>
+
+          {/* Meal Planner - 6 cols */}
+          <div className="md:col-span-6 animate-slide-up" style={{ animationDelay: '0.22s' }}>
+            <MealPlannerCard />
           </div>
 
           {/* Family - 6 cols (full width) */}

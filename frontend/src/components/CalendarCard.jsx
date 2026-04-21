@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell, Pencil } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell, Pencil, SkipForward } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { events as eventsApi } from '../lib/api';
@@ -511,6 +511,24 @@ export default function CalendarCard({ events, members, onChange }) {
                 >
                   <Pencil size={16} strokeWidth={2.5} />
                 </button>
+                {(e.recurring || 'none') !== 'none' && (
+                  <button
+                    data-testid={`event-skip-${e.event_id}`}
+                    onClick={async () => {
+                      try {
+                        await eventsApi.addException(e.event_id, e.date);
+                        toast.success('Skipped this one');
+                        onChange();
+                      } catch {
+                        toast.error('Failed to skip');
+                      }
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-amber-700"
+                    title="Skip just this occurrence"
+                  >
+                    <SkipForward size={16} strokeWidth={2.5} />
+                  </button>
+                )}
                 <button
                   data-testid={`event-delete-${e.event_id}`}
                   onClick={() => del(e, e.date)}

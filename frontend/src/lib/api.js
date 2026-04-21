@@ -46,6 +46,7 @@ export const family = {
   listInvites: () => api.get('/family/invites').then((r) => r.data),
   revokeInvite: (token) => api.delete(`/family/invites/${token}`).then((r) => r.data),
   previewInvite: (token) => api.get(`/family/invites/preview/${token}`).then((r) => r.data),
+  transferOwnership: (toUserId) => api.post('/family/transfer-ownership', { to_user_id: toUserId }).then((r) => r.data),
 };
 
 export const events = {
@@ -80,4 +81,17 @@ export const notes = {
   create: (payload) => api.post('/notes', payload).then((r) => r.data),
   update: (id, payload) => api.put(`/notes/${id}`, payload).then((r) => r.data),
   delete: (id) => api.delete(`/notes/${id}`).then((r) => r.data),
+};
+
+export const meals = {
+  list: (start_date, end_date) => api.get('/meals', { params: { start_date, end_date } }).then((r) => r.data),
+  create: (payload) => api.post('/meals', payload).then((r) => r.data),
+  update: (id, payload) => api.put(`/meals/${id}`, payload).then((r) => r.data),
+  delete: (id) => api.delete(`/meals/${id}`).then((r) => r.data),
+  toShopping: (start_date, end_date, supermarket = 'Any') =>
+    api.post('/meals/to-shopping', { start_date, end_date, supermarket }).then((r) => r.data),
+};
+
+export const activity = {
+  list: (since) => api.get('/activity', { params: since ? { since } : {} }).then((r) => r.data),
 };
