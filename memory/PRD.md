@@ -53,7 +53,14 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Edit single occurrence vs entire series (creates a standalone event + adds exception on original)
 - [x] Multi-parent role permissions — only `is_owner` (family creator) can rename the family; Owner badge on parent card; joiners via invite/code are is_owner=False
 - [x] Shopping list checkout mode — in-store grouped view with per-supermarket tabs, progress bar, big tap targets, finish-and-clear
-- [x] Tested: backend 14/14 regression + frontend smoke clean (WeekendCard recurring-icon import + legacy is_owner backfill fixes)
+- **Iteration 4 (Apr 2026)**:
+- [x] Activity feed notifications — toasts when partner adds shopping/notes/events/meals (30s polling, family-scoped, `/api/activity?since=ISO`)
+- [x] 1-tap skip-next-occurrence button on recurring events (no modal needed)
+- [x] Transfer ownership to another parent (owner-only, with 403/404/400 guards)
+- [x] Weekly **meal planner** — 7-day × 4-meal (breakfast/lunch/dinner/snack) grid, per-meal ingredients
+- [x] Send-to-shopping — aggregates unique ingredients from meals in a date range to shopping list (tagged supermarket of choice)
+- [x] Children can already be assigned to calendar events via existing `assigned_to` picker
+- [x] Tested: 26/26 backend + frontend smoke clean
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)
