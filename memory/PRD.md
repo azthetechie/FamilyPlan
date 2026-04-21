@@ -48,7 +48,12 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Recurring events (daily/weekly/monthly with optional end date)
 - [x] Event reminders (15m / 1h / 1day before) — toast + browser Notification
 - [x] Shopping list templates (create/apply/delete, applies all items with frequent-item increment)
-- [x] Tested: backend 35/35 in-scope, 4/4 recurring regression tests green, all frontend flows verified
+- **Iteration 3 (Apr 2026)**:
+- [x] Recurring event exceptions — skip a single occurrence without affecting series
+- [x] Edit single occurrence vs entire series (creates a standalone event + adds exception on original)
+- [x] Multi-parent role permissions — only `is_owner` (family creator) can rename the family; Owner badge on parent card; joiners via invite/code are is_owner=False
+- [x] Shopping list checkout mode — in-store grouped view with per-supermarket tabs, progress bar, big tap targets, finish-and-clear
+- [x] Tested: backend 14/14 regression + frontend smoke clean (WeekendCard recurring-icon import + legacy is_owner backfill fixes)
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)

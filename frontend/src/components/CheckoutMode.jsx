@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ShoppingCart, Check, ChevronLeft, X, Trophy } from 'lucide-react';
-import { Dialog, DialogContent } from './ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/dialog';
 import { shopping as shoppingApi } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -77,7 +77,7 @@ export default function CheckoutMode({ open, onOpenChange, items, onChange }) {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <ShoppingCart size={20} strokeWidth={2.5} />
-              <span className="font-outfit font-bold text-lg">Shopping Mode</span>
+              <DialogTitle className="font-outfit font-bold text-lg">Shopping Mode</DialogTitle>
             </div>
             <button
               data-testid="checkout-close-btn"
@@ -87,6 +87,9 @@ export default function CheckoutMode({ open, onOpenChange, items, onChange }) {
               <X size={16} />
             </button>
           </div>
+          <DialogDescription className="sr-only">
+            In-store shopping mode grouped by supermarket with progress tracking.
+          </DialogDescription>
 
           {/* Store tabs */}
           <div className="flex flex-wrap gap-1.5 mt-2">
