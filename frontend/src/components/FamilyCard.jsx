@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 const CHILD_COLORS = ['#FFD6BA', '#B9FBC0', '#90DBF4', '#E0C3FC', '#FBF8CC'];
 
-export default function FamilyCard({ members, onChange }) {
+export default function FamilyCard({ members, onChange, currentUser }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', age: '', color: CHILD_COLORS[0] });
 
@@ -20,6 +20,8 @@ export default function FamilyCard({ members, onChange }) {
   const [joinOpen, setJoinOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+
+  const isOwner = currentUser?.is_owner !== false; // defaults true for legacy accounts
 
   const loadInfo = async () => {
     try {
@@ -76,8 +78,8 @@ export default function FamilyCard({ members, onChange }) {
       toast.success('Family name updated');
       setEditingName(false);
       loadInfo();
-    } catch {
-      toast.error('Failed to update name');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Failed to update name');
     }
   };
 
@@ -116,14 +118,16 @@ export default function FamilyCard({ members, onChange }) {
           ) : (
             <h2 className="font-outfit font-bold text-2xl mt-1 flex items-center gap-2" data-testid="family-name-display">
               {info?.name || 'Our crew'}
-              <button
-                data-testid="family-name-edit-btn"
-                onClick={() => setEditingName(true)}
-                className="text-gray-400 hover:text-gray-900"
-                title="Edit family name"
-              >
-                <Pencil size={14} strokeWidth={2.5} />
-              </button>
+              {isOwner && (
+                <button
+                  data-testid="family-name-edit-btn"
+                  onClick={() => setEditingName(true)}
+                  className="text-gray-400 hover:text-gray-900"
+                  title="Edit family name"
+                >
+                  <Pencil size={14} strokeWidth={2.5} />
+                </button>
+              )}
             </h2>
           )}
           {info?.short_code && (
@@ -181,7 +185,14 @@ export default function FamilyCard({ members, onChange }) {
               <UserCircle size={28} strokeWidth={2.5} />
             )}
             <div>
-              <div className="font-outfit font-bold text-sm leading-none">{p.name}</div>
+              <div className="font-outfit font-bold text-sm leading-none flex items-center gap-1">
+                {p.name}
+                {p.is_owner && (
+                  <span data-testid={`owner-badge-${p.user_id}`} className="ml-0.5 px-1.5 py-0.5 rounded bg-[#FBF8CC] border border-gray-900 text-[9px] uppercase tracking-widest font-bold">
+                    Owner
+                  </span>
+                )}
+              </div>
               <div className="text-[10px] uppercase tracking-widest font-bold text-gray-700 mt-0.5">Parent</div>
             </div>
           </div>

@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 4 testing of (1) recurring event exceptions endpoints, (2) is_owner permission gating on PUT /api/family/info, (3) CheckoutMode shopping flow. Backend: 13/14 pass (new exception endpoints all pass; owner permission gating works perfectly with mongosh-toggle of is_owner; one assertion FAILED revealing a real bug — legacy parents lack is_owner field in /api/family/members because raw mongo docs are returned). Frontend: app loads, FamilyCard shows 'Owner' badge + edit pencil for owner, CheckoutMode opens with per-store tabs, progress bar, and Finish button. CRITICAL frontend regression discovered: WeekendCard.jsx crashes with ReferenceError: Repeat is not defined whenever a recurring event is rendered (DayBlock uses <Repeat /> but the file only imports Sparkles from lucide-react).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/family/members", "issue": "Returns raw Mongo docs without coercing through User pydantic model. Legacy parent docs created before is_owner was added (e.g. test-user-solo-1776808359819) are returned WITHOUT the is_owner key, breaking the frontend Owner-badge gating contract. Recommend: either backfill via one-time mongo update {is_owner: {$ifNull:[\"$is_owner\", true]}} OR project with $ifNull OR serialize each doc through User(**doc).model_dump()."},
+      {"endpoint": "server.py shutdown handler", "issue": "@app.on_event('shutdown') still deprecated (carried from prior iterations)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WeekendCard.jsx (DayBlock)", "issue": "ReferenceError: Repeat is not defined at line 72. <Repeat size={11} /> is rendered when an event has recurring !== 'none', but the file imports only Sparkles from lucide-react (line 2). Crashes the weekend card and breaks the Calendar UI flow whenever any recurring event falls in the next/current weekend window. Reproduced by POST /api/events with recurring='daily' then refreshing the dashboard. Fix: change line 2 to `import { Sparkles, Repeat } from 'lucide-react';`", "selector": "WeekendCard DayBlock", "priority": "HIGH"},
+      {"component": "CheckoutMode dialog (or shadcn Dialog usage)", "issue": "Console warning: `DialogContent requires a DialogTitle for the component to be accessible for screen reader users` and `Missing Description or aria-describedby={undefined}`. The visible header uses a plain <div>, not <DialogTitle>. Wrap the 'Shopping Mode' heading with DialogTitle (and add a DialogDescription or VisuallyHidden one) to satisfy Radix accessibility.", "selector": "CheckoutMode.jsx lines 76-90", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iteration4_results.xml"
+  ],
+  "action_items": [
+    "FIX (critical): Add `Repeat` to the lucide-react import in /app/frontend/src/components/WeekendCard.jsx line 2 — the missing import crashes DayBlock whenever a recurring event hits the weekend window and prevents the user from interacting with the Calendar/event-action chooser.",
+    "FIX (medium): Make GET /api/family/members guarantee the is_owner field exists (backfill legacy docs OR serialize through User model OR project with $ifNull) so the Owner badge / non-owner gating works consistently for previously-created parents.",
+    "FIX (low): Replace plain header div in CheckoutMode with shadcn DialogTitle (+ DialogDescription/VisuallyHidden) to satisfy Radix a11y warnings.",
+    "Optional: backfill any legacy users.is_owner via `db.users.updateMany({is_owner:{$exists:false}}, {$set:{is_owner:true}})` (safest default since legacy users were the original family creators)."
+  ],
+  "critical_code_review_comments": [
+    "Event.exceptions field uses $addToSet on POST /api/events/{id}/exceptions — verified idempotent and correctly returns updated event with refreshed exceptions array. Defaults to [] when absent.",
+    "DELETE /api/events/{id}/exceptions/{date} uses $pull and refetches doc — works, but never validates the event belongs to the user's family before the find_one (it does, via family_id filter). However if the event does not exist at all, the function still returns 404 only after the 2nd find_one — minor extra DB call. OK.",
+    "PUT /api/family/info correctly enforces is_owner check at line 344. 403 message text matches spec.",
+    "auth/session correctly sets is_owner=False when joined via valid invite_token and True for fresh signups. family/join correctly demotes joiner to is_owner=False.",
+    "FRONTEND: CalendarCard.openEdit + performAction implements the single/series chooser correctly: 'single' edit clones event with recurring='none' then $addToSet exception on original; 'single' delete just adds exception; 'series' edit/delete hits PUT/DELETE. Logic is sound.",
+    "FRONTEND BUG: WeekendCard.jsx is missing Repeat in its lucide-react import — a regression introduced when iteration-3 added the recurring badge to DayBlock. This crash blocks the calendar interaction. HIGH priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (NEW)"
+  ],
+  "success_rate": {"backend": "92.8% (13/14)", "frontend": "Manual smoke - CheckoutMode opens & renders correctly; FamilyCard owner badge + edit-pencil visible for owner; HIGH-severity recurring-event crash in WeekendCard blocks the action-chooser flow"},
+  "test_credentials": "Reused PRIMARY token from /app/memory/test_credentials.md (test_session_1776655943013, family-1776655943013). Owner-permission tests toggle is_owner directly via pymongo and restore=True after each test (autouse fixture).",
+  "seed_data_creation": "Backend tests self-seed a recurring event (TEST_Recurring Exception Test) and clean it up. Frontend smoke seeded TEST_Bread/TEST_Milk/TEST_Apples shopping items + a TEST_RecurringDaily event (cleaned up where possible; manual cleanup may be needed if WeekendCard crash blocked teardown).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration4.py is the primary regression for iteration-4 features (exceptions + is_owner gating). The TestOwnerPermissions class uses a pymongo fixture to flip is_owner; ensure MONGO_URL+DB_NAME are exported in shell (only present in /app/backend/.env). The is_owner gap on legacy parents in /api/family/members is a real bug — once main agent backfills, the failing test will pass. The HIGH WeekendCard crash MUST be fixed before recurring-event UI flows can be e2e-validated.",
+  "rca_of_the_issue": {
+    "weekend_card_crash": {"symptom": "PAGEERROR: Repeat is not defined in <DayBlock>", "root_cause": "WeekendCard.jsx imports only `{ Sparkles }` from lucide-react but uses `<Repeat />` at line 72 inside DayBlock", "reproduction": "POST /api/events with recurring='daily' (any date in current/next weekend) -> reload dashboard -> DayBlock throws", "fix": "Add Repeat to the lucide-react import statement in WeekendCard.jsx"},
+    "members_missing_is_owner": {"symptom": "Some parents in /api/family/members lack is_owner key", "root_cause": "Endpoint returns Mongo docs raw via .find().to_list(); legacy users created before iter-4 don't have is_owner persisted", "reproduction": "Inspect parent test-user-solo-1776808359819 in response", "fix": "Backfill via mongo updateMany OR coerce via User(**doc).model_dump()"}
+  }
+}

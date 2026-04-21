@@ -18,7 +18,7 @@ export function parseDate(str) {
 /**
  * Given the raw events list and a visible date range (start, end inclusive),
  * expand recurring events into occurrences within that range. Non-recurring
- * events are passed through unchanged (if in range).
+ * events are passed through unchanged (if in range). Respects event.exceptions.
  * Each occurrence carries a new `date` (ISO) but keeps its original `event_id`.
  * We add `occurrence_key` for React keys.
  */
@@ -27,18 +27,17 @@ export function expandEvents(events, rangeStart, rangeEnd) {
   for (const e of events) {
     const base = parseDate(e.date);
     if (!base) continue;
+    const exceptions = new Set(e.exceptions || []);
     const rec = e.recurring || 'none';
     if (rec === 'none') {
-      if (base >= rangeStart && base <= rangeEnd) {
+      if (base >= rangeStart && base <= rangeEnd && !exceptions.has(e.date)) {
         out.push({ ...e, occurrence_key: `${e.event_id}_${e.date}` });
       }
       continue;
     }
     const until = e.recur_until ? parseDate(e.recur_until) : null;
     const hardCap = until && until < rangeEnd ? until : rangeEnd;
-    // Walk forward from base
     const cursor = new Date(base);
-    // If base is before rangeStart, fast-forward
     while (cursor < rangeStart && cursor <= hardCap) {
       if (rec === 'daily') cursor.setDate(cursor.getDate() + 1);
       else if (rec === 'weekly') cursor.setDate(cursor.getDate() + 7);
@@ -46,12 +45,15 @@ export function expandEvents(events, rangeStart, rangeEnd) {
       else break;
     }
     while (cursor <= hardCap) {
-      out.push({
-        ...e,
-        date: dateKey(cursor),
-        occurrence_key: `${e.event_id}_${dateKey(cursor)}`,
-        is_occurrence: dateKey(cursor) !== e.date,
-      });
+      const key = dateKey(cursor);
+      if (!exceptions.has(key)) {
+        out.push({
+          ...e,
+          date: key,
+          occurrence_key: `${e.event_id}_${key}`,
+          is_occurrence: key !== e.date,
+        });
+      }
       if (rec === 'daily') cursor.setDate(cursor.getDate() + 1);
       else if (rec === 'weekly') cursor.setDate(cursor.getDate() + 7);
       else if (rec === 'monthly') cursor.setMonth(cursor.getMonth() + 1);

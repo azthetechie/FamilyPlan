@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Trash2, Repeat, Bell, Pencil } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { events as eventsApi } from '../lib/api';
@@ -53,6 +53,9 @@ export default function CalendarCard({ events, members, onChange }) {
   const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState(dateKey(today));
   const [open, setOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [editMode, setEditMode] = useState('series'); // 'single' | 'series'
+  const [actionDialog, setActionDialog] = useState(null); // { event, occurrenceDate, action }
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -91,6 +94,7 @@ export default function CalendarCard({ events, members, onChange }) {
   const monthName = viewDate.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 
   const openAdd = (prefillDate) => {
+    setEditingEvent(null);
     setForm({
       title: '',
       description: '',
@@ -105,6 +109,22 @@ export default function CalendarCard({ events, members, onChange }) {
     setOpen(true);
   };
 
+  const openEdit = (event, occurrenceDate) => {
+    setEditingEvent({ ...event, _occurrence_date: occurrenceDate || event.date });
+    setForm({
+      title: event.title || '',
+      description: event.description || '',
+      date: occurrenceDate || event.date,
+      time: event.time || '',
+      category: event.category || 'general',
+      assigned_to: event.assigned_to || [],
+      recurring: event.recurring || 'none',
+      recur_until: event.recur_until || '',
+      reminder_minutes: event.reminder_minutes || 0,
+    });
+    setOpen(true);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) {
@@ -112,24 +132,80 @@ export default function CalendarCard({ events, members, onChange }) {
       return;
     }
     const cat = CATEGORIES.find((c) => c.value === form.category) || CATEGORIES[0];
+    const payload = { ...form, color: cat.color };
     try {
-      await eventsApi.create({ ...form, color: cat.color });
-      toast.success('Event added');
+      if (editingEvent) {
+        if (editMode === 'single' && (editingEvent.recurring || 'none') !== 'none') {
+          // Create a new standalone event for this occurrence + add exception on the original
+          const occDate = editingEvent._occurrence_date;
+          await eventsApi.create({ ...payload, recurring: 'none', recur_until: '' });
+          await eventsApi.addException(editingEvent.event_id, occDate);
+          toast.success('Occurrence edited');
+        } else {
+          // Edit the whole series
+          await eventsApi.update(editingEvent.event_id, payload);
+          toast.success('Event updated');
+        }
+      } else {
+        await eventsApi.create(payload);
+        toast.success('Event added');
+      }
       setOpen(false);
+      setEditingEvent(null);
+      setEditMode('series');
       onChange();
     } catch (err) {
-      toast.error('Failed to add event');
+      toast.error('Failed to save event');
     }
   };
 
-  const del = async (id) => {
+  const askActionForRecurring = (event, occurrenceDate, action) => {
+    setActionDialog({ event, occurrenceDate, action });
+  };
+
+  const performAction = async (scope) => {
+    const { event, occurrenceDate, action } = actionDialog;
+    setActionDialog(null);
     try {
-      await eventsApi.delete(id);
+      if (action === 'delete') {
+        if (scope === 'single') {
+          await eventsApi.addException(event.event_id, occurrenceDate);
+          toast.success('Occurrence skipped');
+        } else {
+          await eventsApi.delete(event.event_id);
+          toast.success('Series deleted');
+        }
+        onChange();
+      } else if (action === 'edit') {
+        setEditMode(scope);
+        openEdit(event, occurrenceDate);
+      }
+    } catch {
+      toast.error('Action failed');
+    }
+  };
+
+  const del = async (event, occurrenceDate) => {
+    if ((event.recurring || 'none') !== 'none') {
+      askActionForRecurring(event, occurrenceDate, 'delete');
+      return;
+    }
+    try {
+      await eventsApi.delete(event.event_id);
       toast.success('Event removed');
       onChange();
     } catch {
       toast.error('Delete failed');
     }
+  };
+
+  const edit = (event, occurrenceDate) => {
+    if ((event.recurring || 'none') !== 'none') {
+      askActionForRecurring(event, occurrenceDate, 'edit');
+      return;
+    }
+    setEditMode('series');
+    openEdit(event, occurrenceDate);
   };
 
   const assigneesLabel = (ids) => {
@@ -174,7 +250,7 @@ export default function CalendarCard({ events, members, onChange }) {
           >
             ›
           </button>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditingEvent(null); setEditMode('series'); } }}>
             <DialogTrigger asChild>
               <button
                 data-testid="calendar-add-event-btn"
@@ -187,7 +263,11 @@ export default function CalendarCard({ events, members, onChange }) {
             </DialogTrigger>
             <DialogContent className="bg-[#FDFBF7] border-2 border-gray-900 shadow-[4px_4px_0px_0px_rgba(31,41,55,1)]">
               <DialogHeader>
-                <DialogTitle className="font-outfit text-2xl">New Event</DialogTitle>
+                <DialogTitle className="font-outfit text-2xl">
+                  {editingEvent
+                    ? editMode === 'single' ? 'Edit this occurrence' : 'Edit series'
+                    : 'New Event'}
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={submit} className="space-y-3 pt-2">
                 <input
@@ -317,7 +397,9 @@ export default function CalendarCard({ events, members, onChange }) {
                   type="submit"
                   className="neo-btn bg-[#B9FBC0] px-4 py-2.5 w-full font-bold"
                 >
-                  Save event
+                  {editingEvent
+                    ? editMode === 'single' ? 'Save this occurrence' : 'Save series'
+                    : 'Save event'}
                 </button>
               </form>
             </DialogContent>
@@ -422,10 +504,18 @@ export default function CalendarCard({ events, members, onChange }) {
                   )}
                 </div>
                 <button
+                  data-testid={`event-edit-${e.event_id}`}
+                  onClick={() => edit(e, e.date)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-gray-900"
+                  title="Edit event"
+                >
+                  <Pencil size={16} strokeWidth={2.5} />
+                </button>
+                <button
                   data-testid={`event-delete-${e.event_id}`}
-                  onClick={() => del(e.event_id)}
+                  onClick={() => del(e, e.date)}
                   className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-700 hover:text-red-600"
-                  title={e.is_occurrence ? 'Delete entire series' : 'Delete event'}
+                  title={(e.recurring || 'none') !== 'none' ? 'Delete event / occurrence' : 'Delete event'}
                 >
                   <Trash2 size={16} strokeWidth={2.5} />
                 </button>
@@ -434,6 +524,42 @@ export default function CalendarCard({ events, members, onChange }) {
           )}
         </div>
       </div>
+
+      {/* Recurring action chooser dialog */}
+      <Dialog open={!!actionDialog} onOpenChange={(v) => !v && setActionDialog(null)}>
+        <DialogContent className="bg-[#FDFBF7] border-2 border-gray-900 shadow-[4px_4px_0px_0px_rgba(31,41,55,1)] max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-outfit text-xl">
+              {actionDialog?.action === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <p className="text-sm text-gray-600">
+              "{actionDialog?.event?.title}" repeats {actionDialog?.event?.recurring}.
+              {actionDialog?.action === 'delete' ? ' What do you want to delete?' : ' What do you want to edit?'}
+            </p>
+            <button
+              data-testid="action-single-btn"
+              onClick={() => performAction('single')}
+              className="neo-btn bg-[#FBF8CC] w-full py-2.5 font-bold text-left px-3"
+            >
+              {actionDialog?.action === 'delete' ? 'Just this occurrence' : 'This occurrence only'}
+              <div className="text-xs font-normal text-gray-600 mt-0.5">
+                {actionDialog?.occurrenceDate &&
+                  new Date(actionDialog.occurrenceDate + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })}
+              </div>
+            </button>
+            <button
+              data-testid="action-series-btn"
+              onClick={() => performAction('series')}
+              className="neo-btn bg-[#FFD6BA] w-full py-2.5 font-bold text-left px-3"
+            >
+              {actionDialog?.action === 'delete' ? 'Entire series' : 'All events in series'}
+              <div className="text-xs font-normal text-gray-600 mt-0.5">Affects every occurrence</div>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

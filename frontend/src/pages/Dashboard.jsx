@@ -93,7 +93,7 @@ export default function Dashboard() {
 
           {/* Family - 6 cols (full width) */}
           <div className="md:col-span-6 animate-slide-up" style={{ animationDelay: '0.25s' }}>
-            <FamilyCard members={members} onChange={refresh} />
+            <FamilyCard members={members} onChange={refresh} currentUser={user} />
           </div>
         </div>
       </main>

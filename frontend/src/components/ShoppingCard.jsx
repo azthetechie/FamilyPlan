@@ -1,11 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { ShoppingBag, Plus, Trash2, ScanLine, Check, Camera, X, Sparkles, ClipboardList } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, ScanLine, Check, Camera, X, Sparkles, ClipboardList, ShoppingCart } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { shopping as shoppingApi } from '../lib/api';
 import { toast } from 'sonner';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import TemplatesModal from './TemplatesModal';
+import CheckoutMode from './CheckoutMode';
 
 const SUPERMARKETS = [
   { name: 'Any', color: 'bg-gray-100 text-gray-800 border-gray-300' },
@@ -26,6 +27,7 @@ export default function ShoppingCard({ items, frequent, onChange }) {
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const groups = useMemo(() => {
     const g = {};
@@ -134,6 +136,16 @@ export default function ShoppingCard({ items, frequent, onChange }) {
           </div>
         </div>
         <div className="flex gap-2">
+          <button
+            data-testid="checkout-mode-btn"
+            onClick={() => setCheckoutOpen(true)}
+            disabled={items.length === 0}
+            className="neo-btn bg-[#B9FBC0] px-2.5 py-1.5 text-xs inline-flex items-center gap-1 disabled:opacity-50"
+            title="Shopping mode (at the store)"
+          >
+            <ShoppingCart size={14} strokeWidth={3} />
+            Shop
+          </button>
           <button
             data-testid="templates-btn"
             onClick={() => setTemplatesOpen(true)}
@@ -301,6 +313,13 @@ export default function ShoppingCard({ items, frequent, onChange }) {
         open={templatesOpen}
         onOpenChange={setTemplatesOpen}
         onApplied={onChange}
+      />
+
+      <CheckoutMode
+        open={checkoutOpen}
+        onOpenChange={setCheckoutOpen}
+        items={items}
+        onChange={onChange}
       />
     </div>
   );

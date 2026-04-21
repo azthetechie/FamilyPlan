@@ -31,6 +31,7 @@ class User(BaseModel):
     name: str
     picture: Optional[str] = None
     role: str = "parent"  # parent | child
+    is_owner: bool = True  # True for the parent who created the family
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -66,7 +67,12 @@ class Event(EventCreate):
     event_id: str = Field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:12]}")
     family_id: str
     created_by: str
+    exceptions: List[str] = []  # ISO dates (YYYY-MM-DD) to skip for recurring events
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ExceptionInput(BaseModel):
+    date: str  # YYYY-MM-DD
 
 
 class ShoppingItemCreate(BaseModel):
@@ -241,6 +247,7 @@ async def create_session(request: Request, response: Response):
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         # Check if there's a valid invite to join an existing family
         family_id = None
+        joined_via_invite = False
         if invite_token:
             invite_doc = await db.invites.find_one({"invite_token": invite_token}, {"_id": 0})
             if invite_doc:
@@ -251,6 +258,7 @@ async def create_session(request: Request, response: Response):
                     exp = exp.replace(tzinfo=timezone.utc)
                 if exp and exp > datetime.now(timezone.utc):
                     family_id = invite_doc["family_id"]
+                    joined_via_invite = True
                     # Consume the invite
                     await db.invites.delete_one({"invite_token": invite_token})
         if not family_id:
@@ -262,6 +270,7 @@ async def create_session(request: Request, response: Response):
             "name": name,
             "picture": picture,
             "role": "parent",
+            "is_owner": not joined_via_invite,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.users.insert_one(user_doc)
@@ -332,6 +341,8 @@ async def family_info(request: Request):
 @api_router.put("/family/info")
 async def update_family_info(payload: FamilyInfoUpdate, request: Request):
     user = await get_current_user(request)
+    if not user.is_owner:
+        raise HTTPException(status_code=403, detail="Only the family owner can rename the family")
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="name required")
@@ -380,8 +391,11 @@ async def join_family(payload: FamilyJoin, request: Request):
             detail="Can't switch families because your current family has members or data. Create a fresh account to join.",
         )
 
-    # Migrate user to target family
-    await db.users.update_one({"user_id": user.user_id}, {"$set": {"family_id": target["family_id"]}})
+    # Migrate user to target family (joiner is not owner)
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"family_id": target["family_id"], "is_owner": False}},
+    )
     # Remove empty family meta
     await db.families.delete_one({"family_id": old_family_id})
     return {"ok": True, "family_id": target["family_id"], "name": target["name"], "short_code": target["short_code"]}
@@ -455,6 +469,34 @@ async def delete_event(event_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"ok": True}
+
+
+@api_router.post("/events/{event_id}/exceptions")
+async def add_event_exception(event_id: str, payload: ExceptionInput, request: Request):
+    """Skip a single occurrence of a recurring event by adding the date to exceptions."""
+    user = await get_current_user(request)
+    event = await db.events.find_one({"event_id": event_id, "family_id": user.family_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    await db.events.update_one(
+        {"event_id": event_id},
+        {"$addToSet": {"exceptions": payload.date}},
+    )
+    updated = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    return updated
+
+
+@api_router.delete("/events/{event_id}/exceptions/{date}")
+async def remove_event_exception(event_id: str, date: str, request: Request):
+    user = await get_current_user(request)
+    await db.events.update_one(
+        {"event_id": event_id, "family_id": user.family_id},
+        {"$pull": {"exceptions": date}},
+    )
+    updated = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not updated:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return updated
 
 
 # ============== SHOPPING LIST ==============

@@ -53,6 +53,8 @@ export const events = {
   create: (payload) => api.post('/events', payload).then((r) => r.data),
   update: (id, payload) => api.put(`/events/${id}`, payload).then((r) => r.data),
   delete: (id) => api.delete(`/events/${id}`).then((r) => r.data),
+  addException: (id, date) => api.post(`/events/${id}/exceptions`, { date }).then((r) => r.data),
+  removeException: (id, date) => api.delete(`/events/${id}/exceptions/${date}`).then((r) => r.data),
 };
 
 export const shopping = {
