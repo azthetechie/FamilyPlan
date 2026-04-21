@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Repeat } from 'lucide-react';
 import { dateKey, expandEvents } from '../lib/events';
 
 function getWeekendDates() {

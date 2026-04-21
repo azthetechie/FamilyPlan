@@ -406,9 +406,10 @@ async def get_family_members(request: Request):
     user = await get_current_user(request)
     parents = await db.users.find({"family_id": user.family_id}, {"_id": 0}).to_list(100)
     children = await db.children.find({"family_id": user.family_id}, {"_id": 0}).to_list(100)
+    # Ensure is_owner is always present (legacy users may lack the field)
     for p in parents:
-        if isinstance(p.get("created_at"), str):
-            pass
+        if "is_owner" not in p:
+            p["is_owner"] = True
     return {"parents": parents, "children": children}
 
 

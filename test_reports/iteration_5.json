@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 5 regression re-test confirms BOTH iteration-4 bug fixes land cleanly. (1) WeekendCard no longer crashes on recurring events — `Repeat` is now imported at line 2 of WeekendCard.jsx and the weekend event row renders with the repeat icon, zero page errors. (2) GET /api/family/members now returns `is_owner` on every parent (backfill via mongosh applied to 2 legacy users, AND server.py lines 409-412 defensively defaults to True for any future legacy docs). All 14 backend regression tests in test_iteration4.py pass (was 13/14). Frontend smoke verified: FamilyCard renders Owner badge for both parents, WeekendCard shows the recurring daily event on Sat/Sun with the repeat indicator, no PageErrors, no functional console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "server.py shutdown handler", "issue": "@app.on_event('shutdown') still deprecated (carried from prior iterations; not a functional issue)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CheckoutMode dialog (from iter-4, still open)", "issues": ["Radix console warning: DialogContent requires a DialogTitle + DialogDescription. Wrap the 'Shopping Mode' header with <DialogTitle> and add a <DialogDescription> (or VisuallyHidden) to satisfy a11y. Low priority, not blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iteration5_results.xml"
+  ],
+  "action_items": [
+    "Optional low-priority: replace plain header div in CheckoutMode.jsx (lines ~76-90) with shadcn DialogTitle + DialogDescription/VisuallyHidden to clear the Radix a11y console warning (carried over from iter-4)."
+  ],
+  "critical_code_review_comments": [
+    "WeekendCard.jsx fix verified: `import { Sparkles, Repeat } from 'lucide-react'` at line 2, matches the <Repeat /> usage in DayBlock. Clean.",
+    "server.py get_family_members (lines 409-412) now guards every parent doc with `if 'is_owner' not in p: p['is_owner'] = True` — defensive layer on top of the mongosh backfill. Good belt-and-braces.",
+    "Verified via mongosh: all 3 parent users (test-user-1776655943013, user_e2e3507ff897, test-user-solo-1776808359819) now have is_owner=true persisted in DB.",
+    "PUT /api/family/info owner-gate still enforced (403 for is_owner=false, 200 for true) — test_non_owner_cannot_rename & test_owner_can_rename_family both pass.",
+    "POST /api/events/{id}/exceptions remains idempotent via $addToSet; DELETE /{date} pulls correctly; GET /api/events returns exceptions array. All 7 TestEventExceptions cases green."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% smoke — no page errors; WeekendCard renders recurring event with repeat icon; Owner badges visible for both parents"},
+  "test_credentials": "Reused PRIMARY token from /app/memory/test_credentials.md (test_session_1776655943013, user=test-user-1776655943013, family=family-1776655943013). No new credentials created.",
+  "seed_data_creation": "Seeded one recurring daily event TEST_RecurringDaily (evt_d1f4284e4509) to reproduce the prior WeekendCard crash path — DELETED after verification. Family name restored to 'Our family' post-tests.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration-4 regressions are fully closed. test_iteration4.py is the definitive regression suite (14 tests, all passing). To run: `set -a; source /app/backend/.env; source /app/frontend/.env; set +a; cd /app/backend; python -m pytest tests/test_iteration4.py -v`. The only remaining (low-priority) issue carried from iter-4 is the CheckoutMode DialogTitle/Description a11y warning — non-functional.",
+  "rca_of_the_issue": {
+    "weekend_card_crash": {"status": "FIXED & VERIFIED", "fix_applied": "Line 2 of WeekendCard.jsx now reads `import { Sparkles, Repeat } from 'lucide-react';`. Reproduced the prior failure path by creating a recurring=daily event and loading the dashboard — no PageError, recurring event renders on Sunday with the repeat icon."},
+    "members_missing_is_owner": {"status": "FIXED & VERIFIED", "fix_applied": "Two-layer fix: (a) mongosh db.users.updateMany backfilled is_owner=true on 2 legacy parent docs; (b) server.py get_family_members now defensively defaults is_owner=True for any doc missing the field. test_family_members_includes_is_owner now passes."}
+  }
+}
