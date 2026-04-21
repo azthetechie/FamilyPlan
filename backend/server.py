@@ -739,12 +739,17 @@ async def root():
 
 # ============== ACTIVITY FEED ==============
 @api_router.get("/activity")
-async def list_activity(request: Request, since: Optional[str] = None, limit: int = 50):
+async def list_activity(request: Request, since: Optional[str] = None, before: Optional[str] = None, limit: int = 50):
     user = await get_current_user(request)
     q = {"family_id": user.family_id}
+    date_q = {}
     if since:
-        q["created_at"] = {"$gt": since}
-    items = await db.activity_log.find(q, {"_id": 0}).sort("created_at", -1).limit(min(limit, 200)).to_list(200)
+        date_q["$gt"] = since
+    if before:
+        date_q["$lt"] = before
+    if date_q:
+        q["created_at"] = date_q
+    items = await db.activity_log.find(q, {"_id": 0}).sort("created_at", -1).limit(min(max(limit, 1), 200)).to_list(200)
     return items
 
 

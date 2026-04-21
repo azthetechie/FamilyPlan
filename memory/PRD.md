@@ -60,7 +60,12 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Weekly **meal planner** — 7-day × 4-meal (breakfast/lunch/dinner/snack) grid, per-meal ingredients
 - [x] Send-to-shopping — aggregates unique ingredients from meals in a date range to shopping list (tagged supermarket of choice)
 - [x] Children can already be assigned to calendar events via existing `assigned_to` picker
-- [x] Tested: 26/26 backend + frontend smoke clean
+- **Iteration 5 (Apr 2026)**:
+- [x] Meal templates ("Taco Tuesday") — save reusable meal + ingredients; apply to any week/day/meal slot
+- [x] Family activity log page at `/activity` — full timeline grouped by day, with `before` cursor pagination
+- [x] Mobile swipe-to-check gesture in CheckoutMode (touch swipe right >70px = toggle item)
+- [x] Radix DialogDescription added to all dialogs (a11y warnings cleared)
+- [x] Tested: 37/37 backend regression tests pass; frontend smoke clean (zero a11y warnings, swipe wrappers verified)
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)
