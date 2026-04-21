@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 2 testing complete. Backend: 34/35 pytest pass covering invites (create/list/preview/revoke), family info (auto short_code NEST-XXXX, name update, validation), public preview-code, family/join safety (blocks if data exists; solo can join), shopping templates CRUD+apply with frequent_items increment, and auth/session accepting invite_token body field. Frontend: WeekendCard runtime crash fixed (missing import); all iteration 2 UI flows confirmed (family card shows NEST-F854 code + editable name, Invite Partner modal with Invite link/Family code tabs, Join modal, Shopping Templates modal, Event modal with Repeat+Reminder selects). 1 CRITICAL backend bug: EventCreate Pydantic model is missing recurring/recur_until/reminder_minutes fields - they are silently dropped by server and never persisted, so recurring events will not expand and reminders will not fire end-to-end.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST/PUT /api/events", "issue": "EventCreate Pydantic model (server.py lines 52-60) does not declare recurring, recur_until, reminder_minutes fields. Pydantic v2 silently drops them on input, and they never reach MongoDB. Verified via test: stored event has no recurring/recur_until/reminder_minutes keys. Frontend UI/lib/events.js rely on these fields -> recurring events & reminders are broken end-to-end despite UI appearing to work.", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "server.py line 815", "issue": "@app.on_event('shutdown') deprecated in FastAPI - use lifespan context manager (carried over from iteration 1)."},
+      {"endpoint": "server.py line 392-394", "issue": "Dead code: for p in parents: if isinstance(...): pass (carried over)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WeekendCard.jsx", "issue": "FIXED BY TESTER: Missing import of dateKey/expandEvents from ../lib/events caused ReferenceError: dateKey is not defined - entire dashboard rendered blank red error overlay. Added import; dashboard now renders.", "selector": "weekend-card", "priority": "CRITICAL (FIXED)"}
+    ],
+    "integration_issues": [
+      {"flow": "Calendar recurring events / reminders", "issue": "Even though event-recurring-select / event-reminder-select data-testids exist and UI submits the values, backend drops the fields (see backend critical bug). End-to-end: user selects Weekly repeat -> event saves but does NOT recur in calendar grid, reminder poller has no reminder_minutes to check.", "affected_selectors": ["event-recurring-select", "event-reminder-select", "event-save-btn"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_api.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [
+    "URGENT: Add recurring: Optional[str] = 'none', recur_until: Optional[str] = None, reminder_minutes: Optional[int] = None to EventCreate model in /app/backend/server.py (around line 52). Without this, the entire iteration 2 recurring-events + reminders feature is non-functional despite UI appearing correct.",
+    "After fix, re-run: pytest /app/backend/tests/test_iteration2.py::TestEventRecurring -v",
+    "Consider: also persist reminder_last_fired timestamp to avoid duplicate reminder toasts on refresh.",
+    "Optional: reseed solo test user - the existing solo user was migrated to primary family during join test (leave comment for next iteration)."
+  ],
+  "critical_code_review_comments": [
+    "server.py EventCreate model missing recurring/recur_until/reminder_minutes fields - BLOCKS the headline iteration-2 feature.",
+    "WeekendCard.jsx had broken imports that dateKey call was trying to use globally - crashed entire dashboard. Points to a pre-commit lint/test gap; ESLint no-undef would have caught this.",
+    "server.py /api/family/join safety check correctly uses count_documents across children/events/shopping_items/notes and other_parents; good separation. But does NOT check shopping_templates or invites - an edge case where a solo user created invites/templates then tries to join another family would still succeed and orphan those docs under the old family_id. Consider also cleaning/migrating or blocking.",
+    "server.py /api/family/info does not require role check - any authenticated family member can rename the family. Acceptable for MVP; consider restricting to the creator later.",
+    "server.py create_invite does not dedupe: user can create unlimited invites. Add a soft cap (e.g. 5 live invites per family) to prevent token table bloat.",
+    "server.py preview_family_code uses code.upper() but create uses generate_family_code returning upper - good. Add unique index on families.short_code to prevent collisions under races.",
+    "Frontend lib/events.js not reviewed in depth; once backend persists the recurring fields, revalidate expandEvents produces the correct occurrences for daily/weekly/monthly boundaries (DST, month-end)."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/WeekendCard.jsx",
+    "/app/backend/tests/test_iteration2.py"
+  ],
+  "success_rate": {"backend": "97% (34/35)", "frontend": "95% (all flows work after WeekendCard import fix; recurring-events feature is blocked by backend bug)"},
+  "test_credentials": "SESSION_TOKEN=test_session_1776655943013 (primary, in family-1776655943013 renamed 'Our family'); SOLO_TOKEN=test_session_solo_1776808359819 (was solo, now migrated into primary family after join test). For next iteration, reseed a fresh solo user via mongosh if re-running join tests.",
+  "seed_data_creation": "Seeded a second solo user (test-user-solo-1776808359819 / test_session_solo_1776808359819 / family-solo-1776808359819) to validate join flow. TEST_-prefixed items cleaned up.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Primary bug to retest: add recurring/recur_until/reminder_minutes to EventCreate and rerun TestEventRecurring. WeekendCard import fix is committed. Solo session was consumed by join test - reseed if needed. All 34 other backend tests and every UI flow from the iteration-2 scope pass. The EventRecurring test in test_iteration2.py is the regression guard - it will flip GREEN once the model is fixed.",
+  "rca_of_the_issue": "EventCreate Pydantic model was not updated when recurring/reminder features were added. Pydantic v2 defaults to model_config extra='ignore', so the frontend's extra fields were silently discarded. Server stored event has only title/description/date/time/category/assigned_to/color. Reproduce: POST /api/events with {title, date, recurring:'weekly', recur_until:'2026-05-10', reminder_minutes:60} then GET /api/events - stored doc lacks those 3 keys. Fix: add Optional fields to EventCreate."
+}

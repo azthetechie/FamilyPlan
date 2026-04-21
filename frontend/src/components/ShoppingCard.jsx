@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { ShoppingBag, Plus, Trash2, ScanLine, Check, Camera, X, Sparkles } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, ScanLine, Check, Camera, X, Sparkles, ClipboardList } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
 import { shopping as shoppingApi } from '../lib/api';
 import { toast } from 'sonner';
 import { BrowserMultiFormatReader } from '@zxing/browser';
+import TemplatesModal from './TemplatesModal';
 
 const SUPERMARKETS = [
   { name: 'Any', color: 'bg-gray-100 text-gray-800 border-gray-300' },
@@ -24,6 +25,7 @@ export default function ShoppingCard({ items, frequent, onChange }) {
   const [supermarket, setSupermarket] = useState('Any');
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const groups = useMemo(() => {
     const g = {};
@@ -131,15 +133,26 @@ export default function ShoppingCard({ items, frequent, onChange }) {
             <h2 className="font-outfit font-bold text-xl">{totalOpen} to grab</h2>
           </div>
         </div>
-        <button
-          data-testid="scan-barcode-btn"
-          onClick={() => setScanOpen(true)}
-          className="neo-btn bg-[#90DBF4] px-2.5 py-1.5 text-xs inline-flex items-center gap-1"
-          title="Scan barcode"
-        >
-          <ScanLine size={14} strokeWidth={3} />
-          Scan
-        </button>
+        <div className="flex gap-2">
+          <button
+            data-testid="templates-btn"
+            onClick={() => setTemplatesOpen(true)}
+            className="neo-btn bg-[#FBF8CC] px-2.5 py-1.5 text-xs inline-flex items-center gap-1"
+            title="Shopping list templates"
+          >
+            <ClipboardList size={14} strokeWidth={3} />
+            Lists
+          </button>
+          <button
+            data-testid="scan-barcode-btn"
+            onClick={() => setScanOpen(true)}
+            className="neo-btn bg-[#90DBF4] px-2.5 py-1.5 text-xs inline-flex items-center gap-1"
+            title="Scan barcode"
+          >
+            <ScanLine size={14} strokeWidth={3} />
+            Scan
+          </button>
+        </div>
       </div>
 
       {/* Quick add */}
@@ -283,6 +296,12 @@ export default function ShoppingCard({ items, frequent, onChange }) {
           <BarcodeScanner onResult={onScanResult} onClose={() => setScanOpen(false)} />
         </DialogContent>
       </Dialog>
+
+      <TemplatesModal
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        onApplied={onChange}
+      />
     </div>
   );
 }

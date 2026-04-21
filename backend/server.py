@@ -132,6 +132,38 @@ class InviteCreate(BaseModel):
     email: Optional[str] = ""
 
 
+class FamilyInfoUpdate(BaseModel):
+    name: str
+
+
+class FamilyJoin(BaseModel):
+    code: str
+
+
+def generate_family_code() -> str:
+    return "NEST-" + uuid.uuid4().hex[:4].upper()
+
+
+async def get_or_create_family_meta(family_id: str, name_hint: str = ""):
+    doc = await db.families.find_one({"family_id": family_id}, {"_id": 0})
+    if doc:
+        return doc
+    # Ensure unique short_code
+    for _ in range(6):
+        code = generate_family_code()
+        if not await db.families.find_one({"short_code": code}):
+            break
+    default_name = (name_hint.strip() + "'s family") if name_hint else "Our family"
+    new_doc = {
+        "family_id": family_id,
+        "short_code": code,
+        "name": default_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.families.insert_one(new_doc)
+    return new_doc
+
+
 # ============== AUTH HELPERS ==============
 async def get_current_user(
     request: Request,
@@ -231,6 +263,9 @@ async def create_session(request: Request, response: Response):
         }
         await db.users.insert_one(user_doc)
 
+    # Ensure family meta exists (short_code + name)
+    await get_or_create_family_meta(family_id, name_hint=(name or "").split(" ")[0])
+
     # Store session
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     await db.user_sessions.insert_one({
@@ -276,6 +311,79 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
 
 
 # ============== FAMILY / CHILDREN ==============
+@api_router.get("/family/info")
+async def family_info(request: Request):
+    user = await get_current_user(request)
+    meta = await get_or_create_family_meta(user.family_id, name_hint=(user.name or "").split(" ")[0])
+    parents_count = await db.users.count_documents({"family_id": user.family_id})
+    children_count = await db.children.count_documents({"family_id": user.family_id})
+    return {
+        "family_id": meta["family_id"],
+        "short_code": meta["short_code"],
+        "name": meta["name"],
+        "parents_count": parents_count,
+        "children_count": children_count,
+    }
+
+
+@api_router.put("/family/info")
+async def update_family_info(payload: FamilyInfoUpdate, request: Request):
+    user = await get_current_user(request)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    if len(name) > 60:
+        raise HTTPException(status_code=400, detail="name too long")
+    await get_or_create_family_meta(user.family_id)
+    await db.families.update_one({"family_id": user.family_id}, {"$set": {"name": name}})
+    updated = await db.families.find_one({"family_id": user.family_id}, {"_id": 0})
+    return updated
+
+
+@api_router.get("/family/preview-code/{code}")
+async def preview_family_code(code: str):
+    """Public preview of a family by code - used on Login / Join modal."""
+    meta = await db.families.find_one({"short_code": code.upper()}, {"_id": 0})
+    if not meta:
+        raise HTTPException(status_code=404, detail="Family not found")
+    parents_count = await db.users.count_documents({"family_id": meta["family_id"]})
+    return {
+        "short_code": meta["short_code"],
+        "name": meta["name"],
+        "parents_count": parents_count,
+    }
+
+
+@api_router.post("/family/join")
+async def join_family(payload: FamilyJoin, request: Request):
+    user = await get_current_user(request)
+    code = payload.code.strip().upper()
+    target = await db.families.find_one({"short_code": code}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="Family code not found")
+    if target["family_id"] == user.family_id:
+        raise HTTPException(status_code=400, detail="You're already in this family")
+
+    # Safety: only allow joining if current family has no user-created data (user is solo)
+    old_family_id = user.family_id
+    other_parents = await db.users.count_documents({"family_id": old_family_id, "user_id": {"$ne": user.user_id}})
+    child_count = await db.children.count_documents({"family_id": old_family_id})
+    event_count = await db.events.count_documents({"family_id": old_family_id})
+    shop_count = await db.shopping_items.count_documents({"family_id": old_family_id})
+    note_count = await db.notes.count_documents({"family_id": old_family_id})
+    if other_parents > 0 or child_count or event_count or shop_count or note_count:
+        raise HTTPException(
+            status_code=400,
+            detail="Can't switch families because your current family has members or data. Create a fresh account to join.",
+        )
+
+    # Migrate user to target family
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"family_id": target["family_id"]}})
+    # Remove empty family meta
+    await db.families.delete_one({"family_id": old_family_id})
+    return {"ok": True, "family_id": target["family_id"], "name": target["name"], "short_code": target["short_code"]}
+
+
 @api_router.get("/family/members")
 async def get_family_members(request: Request):
     user = await get_current_user(request)
