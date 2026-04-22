@@ -74,7 +74,12 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Date-range validation also on GET `/api/meals` (returns 400 when `start_date > end_date`)
 - [x] Structured logging in WS handler: replaced bare `except Exception: pass` with `logger_ws.warning/info` (connect, disconnect, send errors, receive errors, insert/broadcast failures) under `nest.ws` logger
 - [x] Flagged Emergent ingress WS limitation: **confirmed** by platform support — WebSocket Upgrade is not supported on `*.preview.emergentagent.com`. Recommended alternatives: SSE, polling (currently active fallback), or contact `support@emergent.sh` for production WS
-- [x] Tested live via curl: meals inverted=400, valid=200, no params=200. Backend lint clean.
+- **Iteration 8 — Self-host deployment (Apr 2026)**:
+- [x] **Self-hostable via Docker Compose**: `Dockerfile.backend` (FastAPI + uvicorn), `Dockerfile.frontend` (multi-stage React build → nginx), `docker-compose.yml` (mongo + backend + frontend), `deploy/nginx.conf` (reverse proxy with `Upgrade` header support for `/api/ws/*`)
+- [x] `.env.example` + `.dockerignore` + comprehensive `DEPLOY.md` (includes Docker install, HTTPS via Caddy/certbot, backups, updates, troubleshooting, architecture diagram)
+- [x] Cookie-security knobs via `COOKIE_SECURE` + `COOKIE_SAMESITE` env vars so the same codebase works on HTTPS prod AND local HTTP testing
+- [x] Frontend built with `REACT_APP_BACKEND_URL=""` → relative `/api/*` calls → **zero CORS**, **single-origin** deploy; WS Upgrade forwarded by bundled nginx
+- [x] Verified: backend still green on existing Emergent env (auth/me=200, activity=200, version=1.2); all lint clean
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)

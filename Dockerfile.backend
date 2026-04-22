@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.6
+
+# -------- Backend image (FastAPI + uvicorn) --------
+FROM python:3.11-slim AS backend
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System deps (build essentials for a few Python packages)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        build-essential curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps first for better layer caching
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --upgrade pip \
+ && pip install -r /app/backend/requirements.txt
+
+# App code
+COPY backend /app/backend
+
+WORKDIR /app/backend
+
+EXPOSE 8001
+
+# Production server via uvicorn (no auto-reload)
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips=*"]

@@ -389,14 +389,20 @@ async def create_session(request: Request, response: Response):
         "created_at": datetime.now(timezone.utc),
     })
 
-    # Set httpOnly cookie
+    # Set httpOnly cookie.
+    # `same-site` + `secure` behaviour is configurable for self-hosting:
+    #   - Production (HTTPS same-origin): samesite="lax", secure=True (default below)
+    #   - Cross-site iframe / separate subdomains: samesite="none", secure=True
+    #   - Local HTTP testing: set COOKIE_SECURE=false (samesite falls back to "lax")
+    cookie_secure = os.environ.get("COOKIE_SECURE", "true").lower() not in ("false", "0", "no")
+    cookie_samesite = os.environ.get("COOKIE_SAMESITE", "lax" if cookie_secure else "lax").lower()
     response.set_cookie(
         key="session_token",
         value=session_token,
         max_age=7 * 24 * 60 * 60,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=cookie_secure,
+        samesite=cookie_samesite,
         path="/",
     )
 

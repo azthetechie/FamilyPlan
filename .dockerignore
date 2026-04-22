@@ -1,0 +1,40 @@
+# Ignore everything outside what the build needs
+node_modules
+npm-debug.log
+yarn-error.log
+.env
+.env.*
+!.env.example
+
+# Python artefacts
+__pycache__
+*.pyc
+.venv
+env/
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Frontend build output (we build it inside the Dockerfile)
+frontend/build
+frontend/.cache
+
+# Tests & reports (not needed in runtime image)
+tests
+test_reports
+auth_testing.md
+
+# Local dev / IDE
+.DS_Store
+.idea
+.vscode
+.git
+.gitignore
+*.log
+
+# Memory / PRD
+memory
+
+# Docs kept out of runtime image (still in repo)
+DEPLOY.md
+README.md

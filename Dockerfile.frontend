@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.6
+
+# -------- Stage 1: Build React app --------
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Cache deps
+COPY frontend/package.json frontend/yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 120000
+
+# Build: REACT_APP_BACKEND_URL="" makes the frontend use relative "/api/..." URLs,
+# which the nginx reverse-proxy routes to the backend container. This makes a single
+# public origin (no CORS needed) and enables WebSocket Upgrade on same origin.
+ARG REACT_APP_BACKEND_URL=""
+ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
+
+COPY frontend/ ./
+RUN yarn build
+
+# -------- Stage 2: Serve with nginx + reverse-proxy /api/* to backend --------
+FROM nginx:1.27-alpine AS runtime
+
+# Remove default config
+RUN rm /etc/nginx/conf.d/default.conf
+
+COPY deploy/nginx.conf /etc/nginx/conf.d/app.conf
+
+# Copy built SPA
+COPY --from=builder /app/build /usr/share/nginx/html
+
+# Healthcheck endpoint via nginx
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/healthz || exit 1
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
