@@ -1,14 +1,17 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Depends, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from contextlib import asynccontextmanager
+from collections import defaultdict
 import os
 import logging
 import uuid
 import httpx
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Set
 from datetime import datetime, timezone, timedelta
 
 ROOT_DIR = Path(__file__).parent
@@ -19,8 +22,38 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup (nothing needed yet; motor initializes lazily)
+    yield
+    # Shutdown
+    client.close()
+
+
+app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
+
+
+# ============== WEBSOCKET CONNECTION MANAGER ==============
+active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+_ws_lock = asyncio.Lock()
+
+
+async def broadcast_activity(family_id: str, payload: dict):
+    """Send an activity payload to every WebSocket in the given family."""
+    stale: list = []
+    async with _ws_lock:
+        conns = list(active_connections.get(family_id, set()))
+    for ws in conns:
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            stale.append(ws)
+    if stale:
+        async with _ws_lock:
+            for ws in stale:
+                active_connections[family_id].discard(ws)
 
 
 # ============== MODELS ==============
@@ -218,18 +251,23 @@ async def get_or_create_family_meta(family_id: str, name_hint: str = ""):
 
 
 async def log_activity(family_id: str, user_id: str, user_name: str, action: str, summary: str, target_id: str = ""):
-    """Append an activity log entry (non-blocking best effort)."""
+    """Append an activity log entry and broadcast to any connected WebSockets."""
+    doc = {
+        "activity_id": f"act_{uuid.uuid4().hex[:12]}",
+        "family_id": family_id,
+        "user_id": user_id,
+        "user_name": user_name,
+        "action": action,  # e.g. shopping.add, note.create, event.create, meal.create
+        "summary": summary,
+        "target_id": target_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     try:
-        await db.activity_log.insert_one({
-            "activity_id": f"act_{uuid.uuid4().hex[:12]}",
-            "family_id": family_id,
-            "user_id": user_id,
-            "user_name": user_name,
-            "action": action,  # e.g. shopping.add, note.create, event.create, meal.create
-            "summary": summary,
-            "target_id": target_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await db.activity_log.insert_one(dict(doc))
+    except Exception:
+        return
+    try:
+        await broadcast_activity(family_id, doc)
     except Exception:
         pass
 
@@ -1106,6 +1144,51 @@ async def apply_template(template_id: str, request: Request):
 
 
 # ============== APP SETUP ==============
+@app.websocket("/api/ws/activity")
+async def ws_activity(websocket: WebSocket):
+    """Real-time activity stream per family. Auth via session_token cookie or ?token= query param."""
+    token = websocket.cookies.get("session_token")
+    if not token:
+        token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)
+        return
+    sess = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
+    if not sess:
+        await websocket.close(code=1008)
+        return
+    expires_at = sess.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        await websocket.close(code=1008)
+        return
+    user_doc = await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+    if not user_doc:
+        await websocket.close(code=1008)
+        return
+    family_id = user_doc["family_id"]
+    await websocket.accept()
+    async with _ws_lock:
+        active_connections[family_id].add(websocket)
+    try:
+        await websocket.send_json({"type": "hello", "family_id": family_id})
+        while True:
+            # Keep-alive; clients can send pings
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        async with _ws_lock:
+            active_connections[family_id].discard(websocket)
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -1121,8 +1204,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

@@ -93,35 +93,87 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [eventList]);
 
-  // Activity feed poller — toast on new activity from OTHER parents
+  // Real-time activity via WebSocket (with polling fallback)
   useEffect(() => {
     if (!user) return;
-    const poll = async () => {
-      try {
-        const items = await activity.list({ since: lastActivitySeenRef.current });
-        if (!items || items.length === 0) return;
-        const fresh = [...items].reverse();
-        let changedFromOthers = false;
-        for (const a of fresh) {
-          if (a.user_id !== user.user_id) {
-            changedFromOthers = true;
-            toast(`${a.user_name}`, {
-              description: a.summary,
-              icon: <SparkIcon size={16} />,
-              duration: 6000,
-            });
-          }
-          if (a.created_at > lastActivitySeenRef.current) {
-            lastActivitySeenRef.current = a.created_at;
-          }
-        }
-        if (changedFromOthers) refresh();
-      } catch {
-        // silently ignore
+    const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+    const wsUrl = BACKEND_URL.replace(/^http/, 'ws') + '/api/ws/activity';
+    let ws = null;
+    let pollId = null;
+    let pingId = null;
+    let closed = false;
+
+    const handleActivity = (a) => {
+      if (!a || !a.action) return;
+      if (a.user_id !== user.user_id) {
+        toast(`${a.user_name}`, {
+          description: a.summary,
+          icon: <SparkIcon size={16} />,
+          duration: 6000,
+        });
+        refresh();
+      }
+      if (a.created_at && a.created_at > lastActivitySeenRef.current) {
+        lastActivitySeenRef.current = a.created_at;
       }
     };
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
+
+    const startPollingFallback = () => {
+      if (pollId) return;
+      pollId = setInterval(async () => {
+        try {
+          const items = await activity.list({ since: lastActivitySeenRef.current });
+          if (!items || items.length === 0) return;
+          const fresh = [...items].reverse();
+          for (const a of fresh) handleActivity(a);
+        } catch {
+          // silent
+        }
+      }, 30_000);
+    };
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch {
+        startPollingFallback();
+        return;
+      }
+      ws.onopen = () => {
+        // Clear any fallback polling once WS is live
+        if (pollId) { clearInterval(pollId); pollId = null; }
+        // Heartbeat
+        pingId = setInterval(() => {
+          try { ws.readyState === 1 && ws.send('ping'); } catch { /* noop */ }
+        }, 25_000);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data?.type === 'hello') return;
+          handleActivity(data);
+        } catch {
+          // ignore plain "pong" text frames
+        }
+      };
+      ws.onerror = () => { /* will trigger onclose */ };
+      ws.onclose = () => {
+        if (pingId) { clearInterval(pingId); pingId = null; }
+        if (closed) return;
+        startPollingFallback();
+        // Try to reconnect after 10s
+        setTimeout(() => { if (!closed) connect(); }, 10_000);
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (pingId) clearInterval(pingId);
+      if (pollId) clearInterval(pollId);
+      try { ws?.close(); } catch { /* noop */ }
+    };
   }, [user, refresh]);
 
   if (loading || !user) return null;

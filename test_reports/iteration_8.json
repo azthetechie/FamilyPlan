@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 8 verification (lifespan migration + meals/to-shopping date validation + WebSocket activity stream). Backend: 9/10 new tests pass. CRITICAL BUG: POST /api/meals/to-shopping does NOT validate start_date <= end_date; an inverted range returns 200 with `{added:0}` instead of the spec-required 400 'start_date must be on or before end_date'. The other 2 changes are GOOD: lifespan(app) context manager works (no startup/shutdown errors, /api/ healthy, /api/auth/me returns user), and the /api/ws/activity endpoint works correctly when tested directly with python-websockets — auth via ?token= and via cookie both succeed; rejects with 1008 on missing/invalid token; sends {type:'hello',family_id:...} on connect; replies 'pong' to 'ping'; broadcasts the new activity payload to in-family WS within ~1s of POST /api/notes (received payload contains action,user_id,user_name,summary,created_at). Same-family broadcast verified. Cross-family isolation verified (no spurious messages on a quiet WS). Regression: 34/34 of test_iteration4+5+6_v2 still green (3 ERRORS were env-var-not-exported teardown only, not real regressions). Frontend Dashboard mount opens wss://.../api/ws/activity and renders normally (greeting + calendar + shopping all visible), BUT the browser WebSocket handshake is being CLOSED by the kubernetes ingress before establishment ('WebSocket is closed before the connection is established' x2 in browser console; ERR_CONNECTION_CLOSED) — direct python-websockets to the same wss URL succeeds, so the issue is at the in-browser/ingress layer (likely missing Upgrade header forwarding or path rewrite for /api/ws/*). Dashboard's polling fallback + 10s reconnect is correctly wired, so the UI is not broken; user just doesn't get real-time updates until ingress proxying for /api/ws/* is fixed.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/meals/to-shopping", "issue": "Missing start_date<=end_date validation. Inverted range returns 200/{added:0} instead of 400 with detail 'start_date must be on or before end_date'. Fix at server.py:839 — add `if payload.start_date > payload.end_date: raise HTTPException(400, 'start_date must be on or before end_date')` at the top of meals_to_shopping.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "@app.websocket /api/ws/activity", "issue": "Bare `except Exception: pass` swallows all errors in the receive loop — makes debugging WS issues hard. Should at least logger.warning(...)."},
+      {"endpoint": "broadcast_activity", "issue": "Iterates conns OUTSIDE the lock but discards stale entries inside a second lock — small window where a newly-added ws could be missed by an in-flight broadcast. Acceptable for activity stream."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Dashboard real-time activity via WebSocket", "issue": "Browser WS to wss://<host>/api/ws/activity is closed by the kubernetes ingress before handshake completes ('WebSocket is closed before the connection is established' + ERR_CONNECTION_CLOSED in console). Python-websockets to the IDENTICAL URL works, so backend & WS code are fine — issue is at the ingress / nginx layer not proxying Upgrade for the /api/ws/* path. Polling fallback correctly takes over (verified by code review of Dashboard.jsx onclose handler), so UI is functional but NOT real-time end-to-end through the public URL.", "affected_selectors": []}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration8.py",
+    "/app/test_reports/pytest/iteration8_results.xml"
+  ],
+  "action_items": [
+    "[HIGH] Add start_date<=end_date validation to POST /api/meals/to-shopping and return 400 with detail='start_date must be on or before end_date'.",
+    "[HIGH-INFRA] Configure kubernetes ingress to proxy WebSocket Upgrade header on path /api/ws/* to backend port 8001 — without this, browser real-time stream is dead and only polling fallback works in production. The python-websockets test confirms backend itself is correct.",
+    "[LOW] Replace bare `except Exception: pass` blocks in /api/ws/activity and broadcast_activity with logger.warning for observability."
+  ],
+  "critical_code_review_comments": [
+    "lifespan(app) migration is clean and idiomatic — single asynccontextmanager with `yield` separating startup/shutdown, FastAPI(lifespan=lifespan) wired at line 34. No on_event handlers remain.",
+    "active_connections uses defaultdict(set) — good. _ws_lock is an asyncio.Lock guarding both adds and the read snapshot in broadcast_activity. The pattern (snapshot under lock → iterate outside lock → re-acquire lock to discard stale) is correct.",
+    "WS auth checks all four failure modes (no token / unknown session / expired session / missing user) and closes with 1008. Token can come from cookie OR ?token= query param — both verified.",
+    "Dashboard.jsx WS lifecycle: connect → onopen clears polling + starts 25s ping → onclose starts polling fallback + schedules 10s reconnect → unmount sets closed=true and clears intervals. Logic is correct; no leak on rapid mount/unmount.",
+    "MISSING validation on /api/meals/to-shopping is the only spec gap — all other iteration-8 deliverables are correctly implemented in backend code.",
+    "Carry-over from iteration 7: GET /api/activity `before` cursor was added in this iteration's server.py — re-test still needed to confirm pagination."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration8.py (NEW - 10 tests: 3 lifespan/health, 3 to-shopping date validation, 4 WebSocket auth+broadcast)",
+    "/app/backend/tests/conftest.py (no-op stub)"
+  ],
+  "success_rate": {"backend": "90% (9/10 iteration-8 tests + 34/34 regression)", "frontend": "Dashboard renders OK; WS real-time stream blocked at ingress (polling fallback active)"},
+  "test_credentials": "Reused SESSION_TOKEN=test_session_1776655943013 from /app/memory/test_credentials.md. WS auth verified via both ?token= query param and Authorization Bearer header for REST.",
+  "seed_data_creation": "Test creates and deletes a single TEST_WS_<uuid> note for broadcast verification. POST /api/meals/to-shopping with date 2099-12-* returns added:0 (no meals exist), so no shopping items leak.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent adds the start_date<=end_date validation, re-run `cd /app/backend && REACT_APP_BACKEND_URL=https://home-organizer-46.preview.emergentagent.com python -m pytest tests/test_iteration8.py -v --asyncio-mode=auto`. The full regression suite is now test_iteration4 + test_iteration5 + test_iteration6_v2 + test_iteration8 = 47 tests. The browser-side WS ingress proxy issue is INFRA — not solvable in app code; confirm whether to flag to platform or accept polling fallback as the production path.",
+  "rca_of_the_issue": "Bug 1 (date validation): MealsToShoppingInput Pydantic model has start_date and end_date as raw str fields with no model-level validator. The handler proceeds straight to db.meals.find with $gte/$lte which silently returns [] for inverted ranges, producing {added:0}. One-line fix at top of meals_to_shopping handler. Bug 2 (browser WS fails but server works): kubernetes ingress (likely nginx or traefik) is not configured to upgrade & forward WebSocket connections for the /api/ws/* sub-path. Verified by: (a) python-websockets directly to wss://<public-host>/api/ws/activity?token=... succeeds — handshake, hello frame, ping/pong, and broadcast all work; (b) Chromium in browser context to the SAME url fails with ERR_CONNECTION_CLOSED before the upgrade. Difference is browser sends Origin header + cookies; either ingress is dropping the Upgrade for paths matching /api/ws/* or the rewrite that strips /api/ for backend isn't preserving WS semantics."
+}
