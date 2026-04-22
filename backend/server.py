@@ -38,6 +38,7 @@ api_router = APIRouter(prefix="/api")
 # ============== WEBSOCKET CONNECTION MANAGER ==============
 active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
 _ws_lock = asyncio.Lock()
+logger_ws = logging.getLogger("nest.ws")
 
 
 async def broadcast_activity(family_id: str, payload: dict):
@@ -48,7 +49,8 @@ async def broadcast_activity(family_id: str, payload: dict):
     for ws in conns:
         try:
             await ws.send_json(payload)
-        except Exception:
+        except Exception as exc:
+            logger_ws.warning("ws send failed family=%s err=%s", family_id, exc)
             stale.append(ws)
     if stale:
         async with _ws_lock:
@@ -264,12 +266,13 @@ async def log_activity(family_id: str, user_id: str, user_name: str, action: str
     }
     try:
         await db.activity_log.insert_one(dict(doc))
-    except Exception:
+    except Exception as exc:
+        logger_ws.warning("activity insert failed action=%s err=%s", action, exc)
         return
     try:
         await broadcast_activity(family_id, doc)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger_ws.warning("activity broadcast failed action=%s err=%s", action, exc)
 
 
 # ============== AUTH HELPERS ==============
@@ -795,9 +798,15 @@ async def list_activity(request: Request, since: Optional[str] = None, before: O
 @api_router.get("/meals")
 async def list_meals(request: Request, start_date: Optional[str] = None, end_date: Optional[str] = None):
     user = await get_current_user(request)
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
     q = {"family_id": user.family_id}
     if start_date and end_date:
         q["date"] = {"$gte": start_date, "$lte": end_date}
+    elif start_date:
+        q["date"] = {"$gte": start_date}
+    elif end_date:
+        q["date"] = {"$lte": end_date}
     meals = await db.meals.find(q, {"_id": 0}).sort("date", 1).to_list(500)
     return meals
 
@@ -1175,6 +1184,8 @@ async def ws_activity(websocket: WebSocket):
     await websocket.accept()
     async with _ws_lock:
         active_connections[family_id].add(websocket)
+    logger_ws.info("ws connected family=%s user=%s total=%d",
+                   family_id, user_doc.get("user_id"), len(active_connections[family_id]))
     try:
         await websocket.send_json({"type": "hello", "family_id": family_id})
         while True:
@@ -1183,9 +1194,10 @@ async def ws_activity(websocket: WebSocket):
             if msg == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
+        logger_ws.info("ws disconnected family=%s user=%s", family_id, user_doc.get("user_id"))
+    except Exception as exc:
+        logger_ws.warning("ws receive error family=%s user=%s err=%s",
+                           family_id, user_doc.get("user_id"), exc)
     finally:
         async with _ws_lock:
             active_connections[family_id].discard(websocket)

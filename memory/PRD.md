@@ -70,7 +70,11 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Date-range validation on `/api/meals/to-shopping` — returns 400 when `start_date > end_date`
 - [x] **Real-time WebSocket activity stream** at `/api/ws/activity` — per-family broadcast with cookie-or-`?token=` auth, 1008 close on invalid auth, hello-frame on connect, ping/pong keep-alive
 - [x] Dashboard WS client with 25s heartbeat, 10s reconnect, graceful polling fallback when WS unavailable
-- [x] Tested: backend 10/10 new tests pass after validation fix (34/34 regression green). Note: browser WS blocked by kubernetes ingress (platform-level) — polling fallback keeps UI live
+- **Iteration 7 (Apr 2026)**:
+- [x] Date-range validation also on GET `/api/meals` (returns 400 when `start_date > end_date`)
+- [x] Structured logging in WS handler: replaced bare `except Exception: pass` with `logger_ws.warning/info` (connect, disconnect, send errors, receive errors, insert/broadcast failures) under `nest.ws` logger
+- [x] Flagged Emergent ingress WS limitation: **confirmed** by platform support — WebSocket Upgrade is not supported on `*.preview.emergentagent.com`. Recommended alternatives: SSE, polling (currently active fallback), or contact `support@emergent.sh` for production WS
+- [x] Tested live via curl: meals inverted=400, valid=200, no params=200. Backend lint clean.
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)
