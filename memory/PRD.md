@@ -65,7 +65,12 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] Family activity log page at `/activity` — full timeline grouped by day, with `before` cursor pagination
 - [x] Mobile swipe-to-check gesture in CheckoutMode (touch swipe right >70px = toggle item)
 - [x] Radix DialogDescription added to all dialogs (a11y warnings cleared)
-- [x] Tested: 37/37 backend regression tests pass; frontend smoke clean (zero a11y warnings, swipe wrappers verified)
+- **Iteration 6 (Apr 2026)**:
+- [x] Migrated `@app.on_event("shutdown")` → `lifespan(app)` asynccontextmanager (FastAPI modern pattern)
+- [x] Date-range validation on `/api/meals/to-shopping` — returns 400 when `start_date > end_date`
+- [x] **Real-time WebSocket activity stream** at `/api/ws/activity` — per-family broadcast with cookie-or-`?token=` auth, 1008 close on invalid auth, hello-frame on connect, ping/pong keep-alive
+- [x] Dashboard WS client with 25s heartbeat, 10s reconnect, graceful polling fallback when WS unavailable
+- [x] Tested: backend 10/10 new tests pass after validation fix (34/34 regression green). Note: browser WS blocked by kubernetes ingress (platform-level) — polling fallback keeps UI live
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)

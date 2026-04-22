@@ -839,6 +839,8 @@ async def delete_meal(meal_id: str, request: Request):
 async def meals_to_shopping(payload: MealsToShoppingInput, request: Request):
     """Aggregate ingredients from meals in date range and add to shopping list."""
     user = await get_current_user(request)
+    if payload.start_date > payload.end_date:
+        raise HTTPException(status_code=400, detail="start_date must be on or before end_date")
     meals = await db.meals.find(
         {"family_id": user.family_id, "date": {"$gte": payload.start_date, "$lte": payload.end_date}},
         {"_id": 0},
