@@ -79,7 +79,12 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] `.env.example` + `.dockerignore` + comprehensive `DEPLOY.md` (includes Docker install, HTTPS via Caddy/certbot, backups, updates, troubleshooting, architecture diagram)
 - [x] Cookie-security knobs via `COOKIE_SECURE` + `COOKIE_SAMESITE` env vars so the same codebase works on HTTPS prod AND local HTTP testing
 - [x] Frontend built with `REACT_APP_BACKEND_URL=""` → relative `/api/*` calls → **zero CORS**, **single-origin** deploy; WS Upgrade forwarded by bundled nginx
-- [x] Verified: backend still green on existing Emergent env (auth/me=200, activity=200, version=1.2); all lint clean
+- [x] Beginner-friendly `INSTALL.md` with 8-step walkthrough
+- **Iteration 9 — Azure Web Apps deployment (Apr 2026)**:
+- [x] Single-container `Dockerfile.azure` (Node build → Python 3.11 runtime with supervisord managing **nginx + uvicorn**, listens on `$PORT`)
+- [x] `deploy/azure/nginx.conf.template` (envsubst-friendly), `supervisord.conf`, `startup.sh`
+- [x] `deploy/azure/deploy.sh` — one-command provisioner using Azure CLI: creates resource group, ACR (with `az acr build` so no local Docker needed), Cosmos DB (Mongo API 4.2 + database), App Service Plan (B1 Linux), Web App for Containers; sets all env vars; enables Always-On, WebSockets, HTTPS-only, HTTP/2
+- [x] `AZURE_DEPLOY.md` — Portal-walkthrough alternative, custom domain + free SSL, logs/AppInsights, CI/CD outline, troubleshooting, teardown
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)
