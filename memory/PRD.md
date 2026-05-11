@@ -85,6 +85,8 @@ Family organiser including: shared calendar, shopping list sortable by Australia
 - [x] `deploy/azure/nginx.conf.template` (envsubst-friendly), `supervisord.conf`, `startup.sh`
 - [x] `deploy/azure/deploy.sh` — one-command provisioner using Azure CLI: creates resource group, ACR (with `az acr build` so no local Docker needed), Cosmos DB (Mongo API 4.2 + database), App Service Plan (B1 Linux), Web App for Containers; sets all env vars; enables Always-On, WebSockets, HTTPS-only, HTTP/2
 - [x] `AZURE_DEPLOY.md` — Portal-walkthrough alternative, custom domain + free SSL, logs/AppInsights, CI/CD outline, troubleshooting, teardown
+- [x] **GitHub Actions CI/CD** — `.github/workflows/azure.yml` uses OIDC federated credentials (no stored secrets); on every push to `main`: ACR build → tag with `<sha>` + `latest` → update Web App image → restart → print URL in run summary
+- [x] `deploy/azure/SETUP_OIDC.md` — one-time setup for Entra app, federated credential, role assignments, and GitHub repo variables
 
 ## Backlog (P0/P1/P2)
 ### P1 (next iteration)

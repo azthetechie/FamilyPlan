@@ -1,0 +1,76 @@
+name: Deploy to Azure Web App
+
+# Auto-builds the Nest image in ACR and updates the Web App on every push to main.
+# Uses OIDC federated credentials — NO long-lived service-principal secrets needed.
+#
+# One-time setup: see deploy/azure/SETUP_OIDC.md
+#
+# Required GitHub repository variables (Settings → Secrets and variables → Actions → Variables):
+#   AZURE_CLIENT_ID         App registration client ID
+#   AZURE_TENANT_ID         Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID   Subscription ID
+#   AZURE_RG                Resource group name (e.g. nest-rg)
+#   AZURE_ACR               ACR name (no .azurecr.io suffix, e.g. nestacr12345)
+#   AZURE_WEBAPP            Web App name (e.g. nest-app-12345)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+
+concurrency:
+  group: azure-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compute image tag
+        id: tag
+        run: echo "tag=nest:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image in ACR
+        run: |
+          az acr build \
+            --registry "${{ vars.AZURE_ACR }}" \
+            --image "${{ steps.tag.outputs.tag }}" \
+            --image "nest:latest" \
+            --file Dockerfile.azure \
+            .
+
+      - name: Update Web App to new image tag
+        run: |
+          ACR_LOGIN_SERVER="$(az acr show -n '${{ vars.AZURE_ACR }}' --query loginServer -o tsv)"
+          az webapp config container set \
+            -n '${{ vars.AZURE_WEBAPP }}' \
+            -g '${{ vars.AZURE_RG }}' \
+            --docker-custom-image-name "${ACR_LOGIN_SERVER}/${{ steps.tag.outputs.tag }}"
+
+      - name: Restart Web App
+        run: az webapp restart -n '${{ vars.AZURE_WEBAPP }}' -g '${{ vars.AZURE_RG }}'
+
+      - name: Show deploy URL
+        run: |
+          HOST="$(az webapp show -n '${{ vars.AZURE_WEBAPP }}' -g '${{ vars.AZURE_RG }}' --query defaultHostName -o tsv)"
+          echo "🌏 Deployed: https://${HOST}"
+          echo "🌏 Deployed: https://${HOST}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Azure logout
+        if: always()
+        run: az logout

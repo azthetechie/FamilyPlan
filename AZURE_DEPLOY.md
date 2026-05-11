@@ -172,12 +172,17 @@ az webapp config ssl bind \
 
 ## 8. CI/CD
 
-Easiest path: **GitHub Actions** that builds + pushes to ACR on every push to `main`. Sample workflow at `.github/workflows/azure.yml` (left as a TODO — happy to scaffold on request).
+The repo ships with a ready-to-use GitHub Actions workflow at **`.github/workflows/azure.yml`** that:
 
-The pattern is:
-1. `az login` via OIDC federated credential.
-2. `az acr build -r <acr> -t nest:${{ github.sha }} -f Dockerfile.azure .`
-3. `az webapp config container set --docker-custom-image-name <acr>.azurecr.io/nest:${{ github.sha }}`.
+1. Authenticates to Azure via **OIDC federated credentials** (no long-lived secrets stored in GitHub).
+2. Builds a fresh image in ACR using `az acr build` (cloud-side, no GitHub-runner Docker needed).
+3. Tags it with both `<commit-sha>` and `latest`.
+4. Updates the Web App's container image and restarts it.
+5. Prints the deploy URL in the run summary.
+
+**One-time setup** (creates the Entra app, federated credential, and role assignments): see [`deploy/azure/SETUP_OIDC.md`](deploy/azure/SETUP_OIDC.md).
+
+Once configured, every push to `main` triggers a deploy. To roll back, re-run the workflow from an earlier commit, or use the manual `az webapp config container set` command from §6.
 
 ---
 
