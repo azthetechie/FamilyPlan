@@ -26,6 +26,13 @@ jobs:
         with:
           tags: "${{ vars.DOCKER_USER }}/docker-build-cloud-demo:latest"
           # For pull requests, export results to the build cache
+# Nest — Family Organiser
+# Docker Compose for self-hosted deployment.
+# Usage:
+#   1. Copy .env.example to .env and edit values
+#   2. `docker compose up -d --build`
+#   3. Visit http://<your-server-or-domain>
+
 name: nest
 
 services:
@@ -49,7 +56,47 @@ services:
   backend:
     build:
       context: .
-      dockerfile: ../../Dockerfile.backend
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      MONGO_URL: ${MONGO_URL:-mongodb://mongo:27017}
+      DB_NAME: ${DB_NAME:-nest}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/api/"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # Empty = the SPA calls "/api/..." relative paths, proxied by this container's nginx.
+        REACT_APP_BACKEND_URL: ""
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PUBLIC_HTTP_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:
     restart: unless-stopped
           # Otherwise, push to a registry.
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
