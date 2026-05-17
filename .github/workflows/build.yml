@@ -49,8 +49,9 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: ../../Dockerfile.backend
     restart: unless-stopped
           # Otherwise, push to a registry.
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
   
+
