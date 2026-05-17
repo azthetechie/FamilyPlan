@@ -17,7 +17,7 @@ RUN apt-get update \
 
 # Install Python deps first for better layer caching
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --upgrade pip \
+RUN python3 -m ensurepip --upgrade \
  && pip install -r /app/backend/requirements.txt
 
 # App code
