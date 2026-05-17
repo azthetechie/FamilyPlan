@@ -25,7 +25,32 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           tags: "${{ vars.DOCKER_USER }}/docker-build-cloud-demo:latest"
-          # For pull requests, export results to the build cache.
+          # For pull requests, export results to the build cache
+name: nest
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: ${DB_NAME:-nest}
+    volumes:
+      - mongo_data:/data/db
+    # Do not expose mongo publicly by default — only accessible inside the compose network.
+    # Uncomment the `ports:` block below if you need direct host access for backups/debug.
+    # ports:
+    #   - "127.0.0.1:27017:27017"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
           # Otherwise, push to a registry.
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
   
