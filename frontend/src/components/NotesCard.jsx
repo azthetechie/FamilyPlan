@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StickyNote, Plus, Trash2, X } from 'lucide-react';
+import { StickyNote, Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { notes as notesApi } from '../lib/api';
 import { toast } from 'sonner';

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -22,7 +22,6 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup (nothing needed yet; motor initializes lazily)
@@ -30,16 +29,12 @@ async def lifespan(app: FastAPI):
     # Shutdown
     client.close()
 
-
 app = FastAPI(lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
-
-# ============== WEBSOCKET CONNECTION MANAGER ==============
 active_connections: Dict[str, Set[WebSocket]] = defaultdict(set)
 _ws_lock = asyncio.Lock()
 logger_ws = logging.getLogger("nest.ws")
-
 
 async def broadcast_activity(family_id: str, payload: dict):
     """Send an activity payload to every WebSocket in the given family."""
@@ -57,8 +52,6 @@ async def broadcast_activity(family_id: str, payload: dict):
             for ws in stale:
                 active_connections[family_id].discard(ws)
 
-
-# ============== MODELS ==============
 class User(BaseModel):
     user_id: str
     family_id: str
@@ -69,7 +62,6 @@ class User(BaseModel):
     is_owner: bool = True  # True for the parent who created the family
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class Child(BaseModel):
     child_id: str = Field(default_factory=lambda: f"child_{uuid.uuid4().hex[:12]}")
     family_id: str
@@ -78,12 +70,10 @@ class Child(BaseModel):
     color: Optional[str] = "#FFD6BA"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class ChildCreate(BaseModel):
     name: str
     age: Optional[int] = None
     color: Optional[str] = "#FFD6BA"
-
 
 class EventCreate(BaseModel):
     title: str
@@ -97,7 +87,6 @@ class EventCreate(BaseModel):
     recur_until: Optional[str] = ""  # ISO date YYYY-MM-DD, empty = no end
     reminder_minutes: Optional[int] = 0  # 0 = off, else minutes before event
 
-
 class Event(EventCreate):
     event_id: str = Field(default_factory=lambda: f"evt_{uuid.uuid4().hex[:12]}")
     family_id: str
@@ -105,10 +94,8 @@ class Event(EventCreate):
     exceptions: List[str] = []  # ISO dates (YYYY-MM-DD) to skip for recurring events
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class ExceptionInput(BaseModel):
     date: str  # YYYY-MM-DD
-
 
 class MealCreate(BaseModel):
     date: str  # YYYY-MM-DD
@@ -117,23 +104,19 @@ class MealCreate(BaseModel):
     ingredients: List[str] = []
     notes: Optional[str] = ""
 
-
 class Meal(MealCreate):
     meal_id: str = Field(default_factory=lambda: f"meal_{uuid.uuid4().hex[:12]}")
     family_id: str
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class TransferOwnerInput(BaseModel):
     to_user_id: str
-
 
 class MealsToShoppingInput(BaseModel):
     start_date: str  # YYYY-MM-DD (inclusive)
     end_date: str  # YYYY-MM-DD (inclusive)
     supermarket: Optional[str] = "Any"
-
 
 class MealTemplateCreate(BaseModel):
     name: str
@@ -141,18 +124,15 @@ class MealTemplateCreate(BaseModel):
     ingredients: List[str] = []
     notes: Optional[str] = ""
 
-
 class MealTemplate(MealTemplateCreate):
     meal_template_id: str = Field(default_factory=lambda: f"mtpl_{uuid.uuid4().hex[:12]}")
     family_id: str
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class MealTemplateApplyInput(BaseModel):
     date: str  # YYYY-MM-DD
     meal_type: str  # breakfast | lunch | dinner | snack
-
 
 class ShoppingItemCreate(BaseModel):
     name: str
@@ -163,7 +143,6 @@ class ShoppingItemCreate(BaseModel):
     category: Optional[str] = "general"
     notes: Optional[str] = ""
 
-
 class ShoppingItem(ShoppingItemCreate):
     item_id: str = Field(default_factory=lambda: f"item_{uuid.uuid4().hex[:12]}")
     family_id: str
@@ -171,12 +150,10 @@ class ShoppingItem(ShoppingItemCreate):
     added_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class NoteCreate(BaseModel):
     title: Optional[str] = ""
     content: str
     color: Optional[str] = "#FBF8CC"
-
 
 class Note(NoteCreate):
     note_id: str = Field(default_factory=lambda: f"note_{uuid.uuid4().hex[:12]}")
@@ -186,25 +163,21 @@ class Note(NoteCreate):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class TemplateItemInput(BaseModel):
     name: str
     supermarket: Optional[str] = "Any"
     quantity: Optional[str] = "1"
     category: Optional[str] = "general"
 
-
 class TemplateCreate(BaseModel):
     name: str
     items: List[TemplateItemInput] = []
-
 
 class Template(TemplateCreate):
     template_id: str = Field(default_factory=lambda: f"tpl_{uuid.uuid4().hex[:12]}")
     family_id: str
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 
 class Invite(BaseModel):
     invite_token: str = Field(default_factory=lambda: uuid.uuid4().hex)
@@ -215,22 +188,17 @@ class Invite(BaseModel):
     expires_at: datetime
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
 class InviteCreate(BaseModel):
     email: Optional[str] = ""
-
 
 class FamilyInfoUpdate(BaseModel):
     name: str
 
-
 class FamilyJoin(BaseModel):
     code: str
 
-
 def generate_family_code() -> str:
     return "NEST-" + uuid.uuid4().hex[:4].upper()
-
 
 async def get_or_create_family_meta(family_id: str, name_hint: str = ""):
     doc = await db.families.find_one({"family_id": family_id}, {"_id": 0})
@@ -250,7 +218,6 @@ async def get_or_create_family_meta(family_id: str, name_hint: str = ""):
     }
     await db.families.insert_one(new_doc)
     return new_doc
-
 
 async def log_activity(family_id: str, user_id: str, user_name: str, action: str, summary: str, target_id: str = ""):
     """Append an activity log entry and broadcast to any connected WebSockets."""
@@ -274,8 +241,6 @@ async def log_activity(family_id: str, user_id: str, user_name: str, action: str
     except Exception as exc:
         logger_ws.warning("activity broadcast failed action=%s err=%s", action, exc)
 
-
-# ============== AUTH HELPERS ==============
 async def get_current_user(
     request: Request,
 ) -> User:
@@ -306,8 +271,6 @@ async def get_current_user(
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     return User(**user_doc)
 
-
-# ============== AUTH ROUTES ==============
 @api_router.post("/auth/session")
 async def create_session(request: Request, response: Response):
     """Exchange session_id from Emergent OAuth for a session_token."""
@@ -340,7 +303,6 @@ async def create_session(request: Request, response: Response):
     if existing:
         user_id = existing["user_id"]
         family_id = existing["family_id"]
-        # Update name/picture
         await db.users.update_one(
             {"user_id": user_id},
             {"$set": {"name": name, "picture": picture}},
@@ -415,12 +377,10 @@ async def create_session(request: Request, response: Response):
         "role": "parent",
     }
 
-
 @api_router.get("/auth/me")
 async def auth_me(request: Request):
     user = await get_current_user(request)
     return user.model_dump()
-
 
 @api_router.post("/auth/logout")
 async def auth_logout(response: Response, session_token: Optional[str] = Cookie(None)):
@@ -429,8 +389,6 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
     response.delete_cookie("session_token", path="/")
     return {"ok": True}
 
-
-# ============== FAMILY / CHILDREN ==============
 @api_router.get("/family/info")
 async def family_info(request: Request):
     user = await get_current_user(request)
@@ -444,7 +402,6 @@ async def family_info(request: Request):
         "parents_count": parents_count,
         "children_count": children_count,
     }
-
 
 @api_router.put("/family/info")
 async def update_family_info(payload: FamilyInfoUpdate, request: Request):
@@ -461,7 +418,6 @@ async def update_family_info(payload: FamilyInfoUpdate, request: Request):
     updated = await db.families.find_one({"family_id": user.family_id}, {"_id": 0})
     return updated
 
-
 @api_router.get("/family/preview-code/{code}")
 async def preview_family_code(code: str):
     """Public preview of a family by code - used on Login / Join modal."""
@@ -474,7 +430,6 @@ async def preview_family_code(code: str):
         "name": meta["name"],
         "parents_count": parents_count,
     }
-
 
 @api_router.post("/family/join")
 async def join_family(payload: FamilyJoin, request: Request):
@@ -504,10 +459,8 @@ async def join_family(payload: FamilyJoin, request: Request):
         {"user_id": user.user_id},
         {"$set": {"family_id": target["family_id"], "is_owner": False}},
     )
-    # Remove empty family meta
     await db.families.delete_one({"family_id": old_family_id})
     return {"ok": True, "family_id": target["family_id"], "name": target["name"], "short_code": target["short_code"]}
-
 
 @api_router.get("/family/members")
 async def get_family_members(request: Request):
@@ -520,7 +473,6 @@ async def get_family_members(request: Request):
             p["is_owner"] = True
     return {"parents": parents, "children": children}
 
-
 @api_router.post("/family/children")
 async def add_child(payload: ChildCreate, request: Request):
     user = await get_current_user(request)
@@ -530,7 +482,6 @@ async def add_child(payload: ChildCreate, request: Request):
     await db.children.insert_one(doc)
     return child.model_dump()
 
-
 @api_router.delete("/family/children/{child_id}")
 async def delete_child(child_id: str, request: Request):
     user = await get_current_user(request)
@@ -539,14 +490,11 @@ async def delete_child(child_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Child not found")
     return {"ok": True}
 
-
-# ============== CALENDAR EVENTS ==============
 @api_router.get("/events")
 async def list_events(request: Request):
     user = await get_current_user(request)
     events = await db.events.find({"family_id": user.family_id}, {"_id": 0}).sort("date", 1).to_list(1000)
     return events
-
 
 @api_router.post("/events")
 async def create_event(payload: EventCreate, request: Request):
@@ -557,7 +505,6 @@ async def create_event(payload: EventCreate, request: Request):
     await db.events.insert_one(doc)
     await log_activity(user.family_id, user.user_id, user.name, "event.create", f"added event \"{event.title}\"", event.event_id)
     return event.model_dump()
-
 
 @api_router.put("/events/{event_id}")
 async def update_event(event_id: str, payload: EventCreate, request: Request):
@@ -571,7 +518,6 @@ async def update_event(event_id: str, payload: EventCreate, request: Request):
     updated = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/events/{event_id}")
 async def delete_event(event_id: str, request: Request):
     user = await get_current_user(request)
@@ -579,7 +525,6 @@ async def delete_event(event_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"ok": True}
-
 
 @api_router.post("/events/{event_id}/exceptions")
 async def add_event_exception(event_id: str, payload: ExceptionInput, request: Request):
@@ -595,7 +540,6 @@ async def add_event_exception(event_id: str, payload: ExceptionInput, request: R
     updated = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/events/{event_id}/exceptions/{date}")
 async def remove_event_exception(event_id: str, date: str, request: Request):
     user = await get_current_user(request)
@@ -608,14 +552,11 @@ async def remove_event_exception(event_id: str, date: str, request: Request):
         raise HTTPException(status_code=404, detail="Event not found")
     return updated
 
-
-# ============== SHOPPING LIST ==============
 @api_router.get("/shopping")
 async def list_shopping(request: Request):
     user = await get_current_user(request)
     items = await db.shopping_items.find({"family_id": user.family_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
-
 
 @api_router.post("/shopping")
 async def add_shopping(payload: ShoppingItemCreate, request: Request):
@@ -646,7 +587,6 @@ async def add_shopping(payload: ShoppingItemCreate, request: Request):
     await log_activity(user.family_id, user.user_id, user.name, "shopping.add", f"added \"{payload.name.strip()}\" to shopping", item.item_id)
     return item.model_dump()
 
-
 @api_router.patch("/shopping/{item_id}")
 async def toggle_shopping(item_id: str, request: Request):
     user = await get_current_user(request)
@@ -657,7 +597,6 @@ async def toggle_shopping(item_id: str, request: Request):
     await db.shopping_items.update_one({"item_id": item_id}, {"$set": {"checked": new_val}})
     item["checked"] = new_val
     return item
-
 
 @api_router.put("/shopping/{item_id}")
 async def update_shopping(item_id: str, payload: ShoppingItemCreate, request: Request):
@@ -671,7 +610,6 @@ async def update_shopping(item_id: str, payload: ShoppingItemCreate, request: Re
     updated = await db.shopping_items.find_one({"item_id": item_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/shopping/{item_id}")
 async def delete_shopping(item_id: str, request: Request):
     user = await get_current_user(request)
@@ -680,13 +618,11 @@ async def delete_shopping(item_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Item not found")
     return {"ok": True}
 
-
 @api_router.delete("/shopping")
 async def clear_checked(request: Request):
     user = await get_current_user(request)
     result = await db.shopping_items.delete_many({"family_id": user.family_id, "checked": True})
     return {"deleted": result.deleted_count}
-
 
 @api_router.get("/shopping/frequent")
 async def frequent_items(request: Request):
@@ -696,7 +632,6 @@ async def frequent_items(request: Request):
         {"family_id": user.family_id}, {"_id": 0}
     ).sort("count", -1).limit(50).to_list(50)
     return items
-
 
 @api_router.get("/shopping/barcode/{barcode}")
 async def lookup_barcode(barcode: str, request: Request):
@@ -728,14 +663,11 @@ async def lookup_barcode(barcode: str, request: Request):
         logging.error(f"Barcode lookup error: {e}")
         return {"found": False, "barcode": barcode, "error": str(e)}
 
-
-# ============== NOTES ==============
 @api_router.get("/notes")
 async def list_notes(request: Request):
     user = await get_current_user(request)
     notes = await db.notes.find({"family_id": user.family_id}, {"_id": 0}).sort("updated_at", -1).to_list(1000)
     return notes
-
 
 @api_router.post("/notes")
 async def create_note(payload: NoteCreate, request: Request):
@@ -754,7 +686,6 @@ async def create_note(payload: NoteCreate, request: Request):
     await log_activity(user.family_id, user.user_id, user.name, "note.create", f"wrote \"{preview}\"", note.note_id)
     return note.model_dump()
 
-
 @api_router.put("/notes/{note_id}")
 async def update_note(note_id: str, payload: NoteCreate, request: Request):
     user = await get_current_user(request)
@@ -769,7 +700,6 @@ async def update_note(note_id: str, payload: NoteCreate, request: Request):
     updated = await db.notes.find_one({"note_id": note_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/notes/{note_id}")
 async def delete_note(note_id: str, request: Request):
     user = await get_current_user(request)
@@ -778,13 +708,10 @@ async def delete_note(note_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Note not found")
     return {"ok": True}
 
-
 @api_router.get("/")
 async def root():
     return {"message": "Family Organizer API", "version": "1.2"}
 
-
-# ============== ACTIVITY FEED ==============
 @api_router.get("/activity")
 async def list_activity(request: Request, since: Optional[str] = None, before: Optional[str] = None, limit: int = 50):
     user = await get_current_user(request)
@@ -799,8 +726,6 @@ async def list_activity(request: Request, since: Optional[str] = None, before: O
     items = await db.activity_log.find(q, {"_id": 0}).sort("created_at", -1).limit(min(max(limit, 1), 200)).to_list(200)
     return items
 
-
-# ============== MEAL PLANNER ==============
 @api_router.get("/meals")
 async def list_meals(request: Request, start_date: Optional[str] = None, end_date: Optional[str] = None):
     user = await get_current_user(request)
@@ -816,7 +741,6 @@ async def list_meals(request: Request, start_date: Optional[str] = None, end_dat
     meals = await db.meals.find(q, {"_id": 0}).sort("date", 1).to_list(500)
     return meals
 
-
 @api_router.post("/meals")
 async def create_meal(payload: MealCreate, request: Request):
     user = await get_current_user(request)
@@ -826,7 +750,6 @@ async def create_meal(payload: MealCreate, request: Request):
     await db.meals.insert_one(doc)
     await log_activity(user.family_id, user.user_id, user.name, "meal.create", f"planned \"{meal.name}\" for {meal.meal_type} on {meal.date}", meal.meal_id)
     return meal.model_dump()
-
 
 @api_router.put("/meals/{meal_id}")
 async def update_meal(meal_id: str, payload: MealCreate, request: Request):
@@ -840,7 +763,6 @@ async def update_meal(meal_id: str, payload: MealCreate, request: Request):
     updated = await db.meals.find_one({"meal_id": meal_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/meals/{meal_id}")
 async def delete_meal(meal_id: str, request: Request):
     user = await get_current_user(request)
@@ -848,7 +770,6 @@ async def delete_meal(meal_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Meal not found")
     return {"ok": True}
-
 
 @api_router.post("/meals/to-shopping")
 async def meals_to_shopping(payload: MealsToShoppingInput, request: Request):
@@ -905,8 +826,6 @@ async def meals_to_shopping(payload: MealsToShoppingInput, request: Request):
     await log_activity(user.family_id, user.user_id, user.name, "meals.to_shopping", f"sent {added} meal ingredients to shopping")
     return {"added": added}
 
-
-# ============== MEAL TEMPLATES ==============
 @api_router.get("/meals/templates")
 async def list_meal_templates(request: Request):
     user = await get_current_user(request)
@@ -914,7 +833,6 @@ async def list_meal_templates(request: Request):
         {"family_id": user.family_id}, {"_id": 0}
     ).sort("created_at", -1).to_list(200)
     return templates
-
 
 @api_router.post("/meals/templates")
 async def create_meal_template(payload: MealTemplateCreate, request: Request):
@@ -924,7 +842,6 @@ async def create_meal_template(payload: MealTemplateCreate, request: Request):
     doc["created_at"] = doc["created_at"].isoformat()
     await db.meal_templates.insert_one(doc)
     return tpl.model_dump()
-
 
 @api_router.put("/meals/templates/{template_id}")
 async def update_meal_template(template_id: str, payload: MealTemplateCreate, request: Request):
@@ -938,7 +855,6 @@ async def update_meal_template(template_id: str, payload: MealTemplateCreate, re
     updated = await db.meal_templates.find_one({"meal_template_id": template_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/meals/templates/{template_id}")
 async def delete_meal_template(template_id: str, request: Request):
     user = await get_current_user(request)
@@ -948,7 +864,6 @@ async def delete_meal_template(template_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Meal template not found")
     return {"ok": True}
-
 
 @api_router.post("/meals/templates/{template_id}/apply")
 async def apply_meal_template(template_id: str, payload: MealTemplateApplyInput, request: Request):
@@ -974,8 +889,6 @@ async def apply_meal_template(template_id: str, payload: MealTemplateApplyInput,
     await log_activity(user.family_id, user.user_id, user.name, "meal.create", f"planned \"{meal.name}\" for {meal.meal_type} on {meal.date} (from template)", meal.meal_id)
     return meal.model_dump()
 
-
-# ============== OWNERSHIP ==============
 @api_router.post("/family/transfer-ownership")
 async def transfer_ownership(payload: TransferOwnerInput, request: Request):
     user = await get_current_user(request)
@@ -991,8 +904,6 @@ async def transfer_ownership(payload: TransferOwnerInput, request: Request):
     await log_activity(user.family_id, user.user_id, user.name, "family.transfer_ownership", f"transferred ownership to {target.get('name', 'partner')}")
     return {"ok": True, "new_owner_id": payload.to_user_id}
 
-
-# ============== PARENT INVITES ==============
 @api_router.post("/family/invites")
 async def create_invite(payload: InviteCreate, request: Request):
     user = await get_current_user(request)
@@ -1015,7 +926,6 @@ async def create_invite(payload: InviteCreate, request: Request):
         "created_by_name": invite.created_by_name,
     }
 
-
 @api_router.get("/family/invites")
 async def list_invites(request: Request):
     user = await get_current_user(request)
@@ -1035,7 +945,6 @@ async def list_invites(request: Request):
             live.append(it)
     return live
 
-
 @api_router.delete("/family/invites/{invite_token}")
 async def revoke_invite(invite_token: str, request: Request):
     user = await get_current_user(request)
@@ -1043,7 +952,6 @@ async def revoke_invite(invite_token: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Invite not found")
     return {"ok": True}
-
 
 @api_router.get("/family/invites/preview/{invite_token}")
 async def preview_invite(invite_token: str):
@@ -1064,8 +972,6 @@ async def preview_invite(invite_token: str):
         "email": invite_doc.get("email", ""),
     }
 
-
-# ============== SHOPPING TEMPLATES ==============
 @api_router.get("/shopping/templates")
 async def list_templates(request: Request):
     user = await get_current_user(request)
@@ -1073,7 +979,6 @@ async def list_templates(request: Request):
         {"family_id": user.family_id}, {"_id": 0}
     ).sort("created_at", -1).to_list(100)
     return templates
-
 
 @api_router.post("/shopping/templates")
 async def create_template(payload: TemplateCreate, request: Request):
@@ -1088,7 +993,6 @@ async def create_template(payload: TemplateCreate, request: Request):
     await db.shopping_templates.insert_one(doc)
     return tpl.model_dump()
 
-
 @api_router.put("/shopping/templates/{template_id}")
 async def update_template(template_id: str, payload: TemplateCreate, request: Request):
     user = await get_current_user(request)
@@ -1101,7 +1005,6 @@ async def update_template(template_id: str, payload: TemplateCreate, request: Re
     updated = await db.shopping_templates.find_one({"template_id": template_id}, {"_id": 0})
     return updated
 
-
 @api_router.delete("/shopping/templates/{template_id}")
 async def delete_template(template_id: str, request: Request):
     user = await get_current_user(request)
@@ -1111,7 +1014,6 @@ async def delete_template(template_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Template not found")
     return {"ok": True}
-
 
 @api_router.post("/shopping/templates/{template_id}/apply")
 async def apply_template(template_id: str, request: Request):
@@ -1139,7 +1041,6 @@ async def apply_template(template_id: str, request: Request):
         doc = item.model_dump()
         doc["created_at"] = doc["created_at"].isoformat()
         await db.shopping_items.insert_one(doc)
-        # Increment frequent items
         name_lower = item.name.strip().lower()
         await db.frequent_items.update_one(
             {"family_id": user.family_id, "name_lower": name_lower},
@@ -1159,8 +1060,6 @@ async def apply_template(template_id: str, request: Request):
         added += 1
     return {"added": added}
 
-
-# ============== APP SETUP ==============
 @app.websocket("/api/ws/activity")
 async def ws_activity(websocket: WebSocket):
     """Real-time activity stream per family. Auth via session_token cookie or ?token= query param."""
@@ -1207,7 +1106,6 @@ async def ws_activity(websocket: WebSocket):
     finally:
         async with _ws_lock:
             active_connections[family_id].discard(websocket)
-
 
 app.include_router(api_router)
 

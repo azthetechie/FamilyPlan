@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { events as eventsApi } from '../lib/api';
 import { toast } from 'sonner';
-import { expandEvents, dateKey as toDateKey } from '../lib/events';
+import { expandEvents } from "../lib/events";
 
 const CATEGORIES = [
   { value: 'general', label: 'General', color: '#90DBF4' },
