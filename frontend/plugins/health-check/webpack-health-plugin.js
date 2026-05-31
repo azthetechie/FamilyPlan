@@ -92,7 +92,6 @@ class WebpackHealthPlugin {
     };
   }
 
-  // Get simplified status for quick checks
   getSimpleStatus() {
     return {
       state: this.status.state,

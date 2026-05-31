@@ -71,7 +71,6 @@ webpackConfig.devServer = (devServerConfig) => {
         middlewares = originalSetupMiddlewares(middlewares, devServer);
       }
 
-      // Setup health endpoints
       setupHealthEndpoints(devServer, healthPluginInstance);
 
       return middlewares;
